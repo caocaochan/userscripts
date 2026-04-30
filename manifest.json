@@ -1,0 +1,19 @@
+{
+  "name": "userscripts",
+  "repoUrl": "https://github.com/caocaochan/userscripts",
+  "scripts": [
+    {
+      "id": "yatsu-opencc-toggle",
+      "name": "Yatsu OpenCC Toggle",
+      "description": "Adds a floating 简 / 繁 toggle to Yatsu Reader and converts reader text between simplified and traditional Chinese with OpenCC.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-opencc.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/yatsu-opencc.user.js",
+      "tags": [
+        "tampermonkey",
+        "opencc",
+        "chinese",
+        "yatsu"
+      ]
+    }
+  ]
+}
