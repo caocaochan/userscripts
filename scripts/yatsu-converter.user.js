@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Yatsu OpenCC Toggle
+// @name         Yatsu Converter
 // @namespace    https://app.yatsu.moe/
 // @version      0.1.0
 // @description  Toggle simplified/traditional Chinese conversion for Yatsu reader content with OpenCC.
