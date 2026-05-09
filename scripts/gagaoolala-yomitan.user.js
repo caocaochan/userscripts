@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GagaOOLala Yomitan Subtitle Hover
 // @namespace    https://www.gagaoolala.com/
-// @version      1.2.0
+// @version      1.2.1
 // @description  Mirrors GagaOOLala Bitmovin subtitles into a Yomitan-friendly hover layer.
 // @author       CaoCao
 // @match        https://www.gagaoolala.com/*/videos/*
@@ -133,6 +133,10 @@
       outline: none;
     }
 
+    .${DOWNLOAD_BUTTON_CLASS}.${DOWNLOAD_BUTTON_CLASS}--pending {
+      opacity: 0.68;
+    }
+
     .${MIRROR_CLASS}__toast {
       position: fixed;
       left: 50%;
@@ -225,7 +229,11 @@
     patchFetch();
     patchXMLHttpRequest();
     scanPerformanceEntries();
-    window.setInterval(scanPerformanceEntries, 1500);
+    scanDomSubtitleSources();
+    window.setInterval(() => {
+      scanPerformanceEntries();
+      scanDomSubtitleSources();
+    }, 1500);
   }
 
   function patchFetch() {
@@ -332,6 +340,19 @@
         }
       }
       scheduleDownloadButtonInjection();
+    } catch (error) {
+      console.warn("[GagaOOLala Yomitan]", error);
+    }
+  }
+
+  function scanDomSubtitleSources() {
+    try {
+      document.querySelectorAll("track[src], video track[src], source[src]").forEach((element) => {
+        if (!(element instanceof HTMLElement)) return;
+        const src = element.getAttribute("src");
+        const label = element.getAttribute("label") || element.getAttribute("srclang") || element.getAttribute("lang") || "";
+        if (src) recordSubtitleCandidate(src, { label, source: "dom" });
+      });
     } catch (error) {
       console.warn("[GagaOOLala Yomitan]", error);
     }
@@ -714,18 +735,14 @@
       const existingButton = row.querySelector(`.${DOWNLOAD_BUTTON_CLASS}`);
       const track = findTrackForLanguage(label);
 
-      if (!track) {
-        if (existingButton) existingButton.remove();
-        continue;
-      }
-
       const button = existingButton || document.createElement("button");
       button.type = "button";
       button.className = DOWNLOAD_BUTTON_CLASS;
       button.textContent = "↓";
-      button.title = `Download ${label} subtitles`;
+      button.classList.toggle(`${DOWNLOAD_BUTTON_CLASS}--pending`, !track);
+      button.title = track ? `Download ${label} subtitles` : `Download ${label} subtitles (track not discovered yet)`;
       button.setAttribute("aria-label", button.title);
-      button.dataset.subtitleUrl = track.url;
+      button.dataset.subtitleUrl = track ? track.url : "";
       button.dataset.subtitleLabel = label;
 
       if (!existingButton) {
@@ -734,6 +751,8 @@
         });
         button.addEventListener("click", (event) => {
           stopDownloadButtonEvent(event);
+          scanPerformanceEntries();
+          scanDomSubtitleSources();
           const nextTrack = findTrackForLanguage(button.dataset.subtitleLabel || label);
           if (!nextTrack) {
             showToast("Subtitle track not found yet");
@@ -748,18 +767,7 @@
   }
 
   function getLanguageMenuRows() {
-    const panels = Array.from(
-      document.querySelectorAll(
-        [
-          ".bmpui-ui-settings-panel",
-          ".bmpui-ui-settings-panel-page",
-          "[class*='bmpui'][class*='settings']",
-          "[class*='bmpui'][class*='menu']",
-          ".bitmovinplayer-container [class*='settings']",
-          ".bitmovinplayer-container [class*='menu']",
-        ].join(", "),
-      ),
-    ).filter((el) => isElementVisible(el) && looksLikeLanguagePanel(el));
+    const panels = getLanguageMenuPanels();
 
     const rows = new Set();
     for (const panel of panels) {
@@ -776,6 +784,29 @@
     return Array.from(rows);
   }
 
+  function getLanguageMenuPanels() {
+    const selectors = [
+      ".bmpui-ui-settings-panel",
+      ".bmpui-ui-settings-panel-page",
+      "[class*='bmpui'][class*='settings']",
+      "[class*='bmpui'][class*='menu']",
+      ".bitmovinplayer-container [class*='settings']",
+      ".bitmovinplayer-container [class*='menu']",
+    ].join(", ");
+
+    const panels = new Set(
+      Array.from(document.querySelectorAll(selectors)).filter((el) => isElementVisible(el) && looksLikeLanguagePanel(el)),
+    );
+
+    Array.from(document.querySelectorAll("div")).forEach((el) => {
+      if (isCompactVisiblePanel(el) && looksLikeLanguagePanel(el)) {
+        panels.add(el);
+      }
+    });
+
+    return Array.from(panels);
+  }
+
   function stopDownloadButtonEvent(event) {
     event.preventDefault();
     event.stopPropagation();
@@ -787,6 +818,14 @@
     if (!text || /subtitles/i.test(text)) return false;
     const normalizedText = normalizeLanguageLabel(text);
     return /\bLanguage\b/i.test(text) || Array.from(subtitleCandidates.values()).some((track) => track.label && normalizedText.includes(normalizeLanguageLabel(track.label)));
+  }
+
+  function isCompactVisiblePanel(element) {
+    if (!(element instanceof HTMLElement) || !isElementVisible(element)) return false;
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 180 || rect.width > 760 || rect.height < 120 || rect.height > window.innerHeight) return false;
+    const style = window.getComputedStyle(element);
+    return style.position === "absolute" || style.position === "fixed" || rect.right > window.innerWidth * 0.45;
   }
 
   function getLanguageRowElement(element, panel) {

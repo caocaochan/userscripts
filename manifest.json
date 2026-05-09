@@ -14,6 +14,19 @@
         "chinese",
         "yatsu"
       ]
+    },
+    {
+      "id": "gagaoolala-yomitan",
+      "name": "GagaOOLala Yomitan Subtitle Hover",
+      "description": "Mirrors GagaOOLala Bitmovin subtitles into a Yomitan-friendly hover layer with subtitle font controls and download helpers.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-yomitan.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/gagaoolala-yomitan.user.js",
+      "tags": [
+        "tampermonkey",
+        "gagaoolala",
+        "subtitles",
+        "yomitan"
+      ]
     }
   ]
 }
