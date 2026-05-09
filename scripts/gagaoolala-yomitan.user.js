@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GagaOOLala Yomitan Subtitle Hover
 // @namespace    https://www.gagaoolala.com/
-// @version      1.2.1
+// @version      1.3.0
 // @description  Mirrors GagaOOLala Bitmovin subtitles into a Yomitan-friendly hover layer.
 // @author       CaoCao
 // @match        https://www.gagaoolala.com/*/videos/*
@@ -29,8 +29,10 @@
   const SUBTITLE_LINE_HEIGHT = "1.28";
   const MIRROR_VERTICAL_PADDING = 8;
   const SUBTITLE_URL_PATTERN = /(?:\.vtt|\.srt|\.ttml|\.dfxp)(?:[?#]|$)|(?:subtitle|subtitles|caption|captions|texttrack|texttracks|timedtext)/i;
+  const MEDIA_PLAYLIST_URL_PATTERN = /\.m3u8(?:[?#]|$)/i;
   const ABSOLUTE_URL_PATTERN = /https?:\/\/[^\s"'<>\\]+/gi;
   const RELATIVE_SUBTITLE_URL_PATTERN = /(?:\/|\.\/|\.\.\/)[^\s"'<>\\]+(?:\.vtt|\.srt|\.ttml|\.dfxp)(?:\?[^\s"'<>\\]*)?/gi;
+  const RELATIVE_PLAYLIST_URL_PATTERN = /(?:\/|\.\/|\.\.\/)[^\s"'<>\\]+\.m3u8(?:\?[^\s"'<>\\]*)?/gi;
   const PAGE_WINDOW = typeof unsafeWindow === "object" && unsafeWindow ? unsafeWindow : window;
   const SCAN_SELECTOR = [
     ".bmpui-ui-subtitle-overlay",
@@ -230,9 +232,11 @@
     patchXMLHttpRequest();
     scanPerformanceEntries();
     scanDomSubtitleSources();
+    scanBitmovinSubtitleTracks();
     window.setInterval(() => {
       scanPerformanceEntries();
       scanDomSubtitleSources();
+      scanBitmovinSubtitleTracks();
     }, 1500);
   }
 
@@ -328,7 +332,7 @@
   }
 
   function shouldInspectResponseText(url, contentType) {
-    return isSubtitleLikeUrl(url) || /json|javascript|text|xml|vtt|srt|ttml|dfxp/i.test(contentType || "");
+    return isSubtitleLikeUrl(url) || isMediaPlaylistUrl(url) || /json|javascript|text|xml|vtt|srt|ttml|dfxp|mpegurl|m3u8/i.test(contentType || "");
   }
 
   function scanPerformanceEntries() {
@@ -358,8 +362,138 @@
     }
   }
 
+  function scanBitmovinSubtitleTracks() {
+    try {
+      for (const player of findBitmovinPlayers()) {
+        recordBitmovinSubtitleTracks(player);
+      }
+    } catch (error) {
+      console.warn("[GagaOOLala Yomitan]", error);
+    }
+  }
+
+  function findBitmovinPlayers() {
+    const players = new Set();
+    const candidates = [
+      PAGE_WINDOW.player,
+      PAGE_WINDOW.bitmovinPlayer,
+      PAGE_WINDOW.bitmovinplayer,
+      PAGE_WINDOW.bmpui,
+    ];
+
+    for (const candidate of candidates) {
+      collectBitmovinPlayers(candidate, players, 0);
+    }
+
+    for (const key of Object.keys(PAGE_WINDOW)) {
+      if (!/player|bitmovin|video|gaga/i.test(key)) continue;
+      collectBitmovinPlayers(PAGE_WINDOW[key], players, 0);
+    }
+
+    return Array.from(players);
+  }
+
+  function collectBitmovinPlayers(value, players, depth) {
+    if (!value || depth > 2) return;
+    if (looksLikeBitmovinPlayer(value)) {
+      players.add(value);
+      return;
+    }
+
+    if (typeof value !== "object" && typeof value !== "function") return;
+    for (const key of Object.keys(value).slice(0, 80)) {
+      try {
+        collectBitmovinPlayers(value[key], players, depth + 1);
+      } catch (error) {
+        // Cross-origin or accessor-backed properties can throw; skip them.
+      }
+    }
+  }
+
+  function looksLikeBitmovinPlayer(value) {
+    return Boolean(
+      value &&
+        ((value.subtitles && typeof value.subtitles.list === "function") ||
+          typeof value.getAvailableSubtitles === "function" ||
+          typeof value.getConfig === "function" ||
+          typeof value.getSource === "function"),
+    );
+  }
+
+  function recordBitmovinSubtitleTracks(player) {
+    const tracks = [];
+
+    try {
+      if (player.subtitles && typeof player.subtitles.list === "function") {
+        tracks.push(...normalizeArray(player.subtitles.list()));
+      }
+    } catch (error) {
+      console.warn("[GagaOOLala Yomitan]", error);
+    }
+
+    try {
+      if (typeof player.getAvailableSubtitles === "function") {
+        tracks.push(...normalizeArray(player.getAvailableSubtitles()));
+      }
+    } catch (error) {
+      console.warn("[GagaOOLala Yomitan]", error);
+    }
+
+    try {
+      if (typeof player.getSource === "function") {
+        collectSubtitleTracksFromObject(player.getSource(), tracks);
+      }
+    } catch (error) {
+      console.warn("[GagaOOLala Yomitan]", error);
+    }
+
+    try {
+      if (typeof player.getConfig === "function") {
+        collectSubtitleTracksFromObject(player.getConfig(), tracks);
+      }
+    } catch (error) {
+      console.warn("[GagaOOLala Yomitan]", error);
+    }
+
+    for (const track of tracks) {
+      recordSubtitleTrackObject(track, "bitmovin");
+    }
+  }
+
+  function normalizeArray(value) {
+    if (!value) return [];
+    return Array.isArray(value) ? value : [value];
+  }
+
+  function collectSubtitleTracksFromObject(value, tracks, depth = 0) {
+    if (!value || typeof value !== "object" || depth > 4) return;
+    if (Array.isArray(value)) {
+      value.forEach((item) => collectSubtitleTracksFromObject(item, tracks, depth + 1));
+      return;
+    }
+
+    if (Array.isArray(value.subtitleTracks)) tracks.push(...value.subtitleTracks);
+    if (Array.isArray(value.subtitles)) tracks.push(...value.subtitles);
+    if (Array.isArray(value.textTracks)) tracks.push(...value.textTracks);
+
+    Object.values(value).forEach((item) => collectSubtitleTracksFromObject(item, tracks, depth + 1));
+  }
+
+  function recordSubtitleTrackObject(track, source) {
+    if (!track || typeof track !== "object") return;
+    const url = track.url || track.src || track.href || track.file;
+    const label = track.label || track.name || track.language || track.lang || track.id || "";
+    if (typeof url === "string" && url) {
+      recordSubtitleCandidate(url, { label, source, isSubtitleTrack: true });
+    }
+  }
+
   function inspectTextForSubtitleCandidates(text, sourceUrl, contentType = "") {
     if (!text) return;
+
+    if (isM3u8Text(text) || isMediaPlaylistUrl(sourceUrl)) {
+      inspectM3u8ForSubtitleCandidates(text, sourceUrl);
+    }
 
     if (/json/i.test(contentType) || /^[\s[]*[{[]/.test(text)) {
       try {
@@ -385,11 +519,63 @@
     const label = getFirstStringValue(value, ["label", "name", "language", "lang", "locale", "title"]);
     for (const key of ["url", "src", "href", "file", "path", "subtitle", "subtitleUrl", "subtitle_url", "captionUrl", "caption_url"]) {
       if (typeof value[key] === "string") {
-        recordSubtitleCandidate(value[key], { label, source: "json", sourceUrl });
+        recordSubtitleCandidate(value[key], {
+          label,
+          source: "json",
+          sourceUrl,
+          isSubtitleTrack: /subtitle|caption|texttrack/i.test(key),
+        });
       }
     }
 
     Object.values(value).forEach((item) => inspectJsonForSubtitleCandidates(item, sourceUrl));
+  }
+
+  function inspectM3u8ForSubtitleCandidates(text, sourceUrl) {
+    const lines = String(text || "").split(/\r?\n/);
+
+    for (const line of lines) {
+      if (!/^#EXT-X-MEDIA:/i.test(line) || !/TYPE=SUBTITLES/i.test(line)) continue;
+      const attributes = parseM3u8Attributes(line.slice(line.indexOf(":") + 1));
+      const uri = attributes.URI;
+      if (!uri) continue;
+
+      const label = attributes.NAME || attributes.LANGUAGE || attributes["ASSOC-LANGUAGE"] || "";
+      recordSubtitleCandidate(uri, {
+        label,
+        source: "m3u8",
+        sourceUrl,
+        isSubtitleTrack: true,
+      });
+    }
+
+    if (looksLikeSubtitlePlaylist(lines)) {
+      recordSubtitleCandidate(sourceUrl, {
+        source: "m3u8",
+        isSubtitleTrack: true,
+      });
+    }
+  }
+
+  function parseM3u8Attributes(value) {
+    const attributes = {};
+    const regex = /([A-Z0-9-]+)=("(?:[^"\\]|\\.)*"|[^,]*)/gi;
+    let match = regex.exec(value);
+
+    while (match) {
+      attributes[match[1].toUpperCase()] = match[2].replace(/^"|"$/g, "");
+      match = regex.exec(value);
+    }
+
+    return attributes;
+  }
+
+  function isM3u8Text(text) {
+    return /^#EXTM3U\b/i.test(String(text || "").trimStart());
+  }
+
+  function looksLikeSubtitlePlaylist(lines) {
+    return lines.some((line) => /\.vtt(?:[?#]|$)|\.webvtt(?:[?#]|$)/i.test(line)) || lines.some((line) => /^#EXT-X-TARGETDURATION:/i.test(line));
   }
 
   function getFirstStringValue(object, keys) {
@@ -402,7 +588,7 @@
   function extractSubtitleUrls(text, sourceUrl) {
     const urls = new Set();
     for (const match of text.matchAll(ABSOLUTE_URL_PATTERN)) {
-      if (isSubtitleLikeUrl(match[0])) urls.add(match[0]);
+      if (isSubtitleLikeUrl(match[0]) || isMediaPlaylistUrl(match[0])) urls.add(match[0]);
     }
 
     for (const match of text.matchAll(RELATIVE_SUBTITLE_URL_PATTERN)) {
@@ -410,12 +596,19 @@
       if (absoluteUrl && isSubtitleLikeUrl(absoluteUrl)) urls.add(absoluteUrl);
     }
 
+    for (const match of text.matchAll(RELATIVE_PLAYLIST_URL_PATTERN)) {
+      const absoluteUrl = toAbsoluteUrl(match[0], sourceUrl || location.href);
+      if (absoluteUrl && isMediaPlaylistUrl(absoluteUrl)) urls.add(absoluteUrl);
+    }
+
     return urls;
   }
 
   function recordSubtitleCandidate(url, metadata = {}) {
     const absoluteUrl = toAbsoluteUrl(url, metadata.sourceUrl || location.href);
-    if (!absoluteUrl || !isSubtitleLikeUrl(absoluteUrl)) return;
+    const isSubtitleTrack = Boolean(metadata.isSubtitleTrack || isSubtitleLikeUrl(absoluteUrl));
+    if (!absoluteUrl || (!isSubtitleTrack && !isMediaPlaylistUrl(absoluteUrl))) return;
+    if (!isSubtitleTrack && isMediaPlaylistUrl(absoluteUrl)) return;
 
     const existing = subtitleCandidates.get(absoluteUrl) || {};
     const label = metadata.label || existing.label || inferLanguageLabel(absoluteUrl) || "";
@@ -427,6 +620,7 @@
       extension: getSubtitleExtension(absoluteUrl),
       contentType: metadata.contentType || existing.contentType || "",
       source: metadata.source || existing.source || "unknown",
+      isSubtitleTrack,
     };
 
     subtitleCandidates.set(absoluteUrl, track);
@@ -448,6 +642,10 @@
 
   function isSubtitleLikeUrl(url) {
     return SUBTITLE_URL_PATTERN.test(String(url || ""));
+  }
+
+  function isMediaPlaylistUrl(url) {
+    return MEDIA_PLAYLIST_URL_PATTERN.test(String(url || ""));
   }
 
   function getSubtitleExtension(url) {
@@ -560,7 +758,7 @@
   }
 
   function isLikelySubtitleFile(track) {
-    return Boolean(track && /^(vtt|srt|ttml|dfxp)$/i.test(track.extension || ""));
+    return Boolean(track && /^(vtt|srt|ttml|dfxp|m3u8)$/i.test(track.extension || ""));
   }
 
   function decodeURIComponentSafe(value) {
@@ -875,13 +1073,13 @@
 
   function downloadSubtitleTrack(track, label) {
     showToast(`Downloading ${label} subtitles`);
-    fetchSubtitleText(track.url)
+    fetchSubtitlePayload(track)
       .then(({ text, contentType }) => {
         if (!text.trim()) throw new Error("Empty subtitle response");
 
         inspectTextForSubtitleCandidates(text, track.url, contentType);
         const convertedText = convertVttToSrt(text);
-        const extension = convertedText ? "srt" : track.extension || getExtensionFromContentType(contentType) || "txt";
+        const extension = convertedText ? "srt" : track.extension === "m3u8" ? "vtt" : track.extension || getExtensionFromContentType(contentType) || "txt";
         const filename = createSubtitleFilename(label, extension);
         downloadTextFile(convertedText || text, filename, extension);
         showToast(`Downloaded ${label} subtitles`);
@@ -890,6 +1088,13 @@
         console.warn("[GagaOOLala Yomitan]", error);
         showToast("Subtitle download failed");
       });
+  }
+
+  function fetchSubtitlePayload(track) {
+    if (track && track.extension === "m3u8") {
+      return fetchHlsSubtitleText(track.url);
+    }
+    return fetchSubtitleText(track.url);
   }
 
   function fetchSubtitleText(url) {
@@ -927,6 +1132,48 @@
         .then(resolve)
         .catch(reject);
     });
+  }
+
+  function fetchHlsSubtitleText(url) {
+    return fetchSubtitleText(url).then(({ text }) => {
+      const segmentUrls = extractM3u8SegmentUrls(text, url);
+      if (segmentUrls.length === 0) {
+        return { text, contentType: "application/vnd.apple.mpegurl" };
+      }
+
+      return Promise.all(segmentUrls.map((segmentUrl) => fetchSubtitleText(segmentUrl).then((response) => response.text))).then((segments) => ({
+        text: mergeVttSegments(segments),
+        contentType: "text/vtt",
+      }));
+    });
+  }
+
+  function extractM3u8SegmentUrls(text, playlistUrl) {
+    const urls = [];
+    for (const rawLine of String(text || "").split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const absoluteUrl = toAbsoluteUrl(line, playlistUrl);
+      if (absoluteUrl) urls.push(absoluteUrl);
+    }
+    return urls;
+  }
+
+  function mergeVttSegments(segments) {
+    const mergedBlocks = [];
+
+    for (const segment of segments) {
+      const normalizedSegment = String(segment || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
+      if (!normalizedSegment) continue;
+
+      const blocks = normalizedSegment.split(/\n{2,}/).filter((block) => {
+        const trimmedBlock = block.trim();
+        return trimmedBlock && !/^WEBVTT\b/i.test(trimmedBlock) && !/^(NOTE|STYLE|REGION)\b/i.test(trimmedBlock);
+      });
+      mergedBlocks.push(...blocks);
+    }
+
+    return `WEBVTT\n\n${mergedBlocks.join("\n\n")}\n`;
   }
 
   function getHeaderValue(headers, name) {
