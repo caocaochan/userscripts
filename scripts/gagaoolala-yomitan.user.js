@@ -2,6 +2,8 @@
 // @name         GagaOOLala Yomitan Subtitle Hover
 // @namespace    https://www.gagaoolala.com/
 // @version      1.4.0
+// @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-yomitan.user.js
+// @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-yomitan.user.js
 // @description  Mirrors GagaOOLala Bitmovin subtitles into a Yomitan-friendly hover layer.
 // @author       CaoCao
 // @match        https://www.gagaoolala.com/*/videos/*

@@ -2,6 +2,8 @@
 // @name         Yatsu Converter
 // @namespace    https://app.yatsu.moe/
 // @version      0.1.0
+// @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-converter.user.js
+// @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-converter.user.js
 // @description  Toggle simplified/traditional Chinese conversion for Yatsu reader content with OpenCC.
 // @match        https://app.yatsu.moe/*
 // @require      https://cdn.jsdelivr.net/npm/opencc-js@1.3.0/dist/umd/full.js
