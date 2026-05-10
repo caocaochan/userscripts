@@ -481,7 +481,19 @@
 
   function recordSubtitleTrackObject(track, source) {
     if (!track || typeof track !== "object") return;
-    const url = track.url || track.src || track.href || track.file;
+    const url =
+      track.url ||
+      track.src ||
+      track.href ||
+      track.file ||
+      track.uri ||
+      track.textUrl ||
+      track.textTrackUrl ||
+      track.subtitleUrl ||
+      track.captionUrl ||
+      (track.source && (track.source.url || track.source.src || track.source.href || track.source.uri)) ||
+      getTrackSourceUrl(track.sources) ||
+      "";
     const label = track.label || track.name || track.language || track.lang || track.id || "";
     if (typeof url === "string" && url) {
       recordSubtitleCandidate(url, { label, source, isSubtitleTrack: true });
@@ -947,11 +959,9 @@
         ["pointerdown", "mousedown", "touchstart"].forEach((eventName) => {
           button.addEventListener(eventName, stopDownloadButtonEvent, true);
         });
-        button.addEventListener("click", (event) => {
+        button.addEventListener("click", async (event) => {
           stopDownloadButtonEvent(event);
-          scanPerformanceEntries();
-          scanDomSubtitleSources();
-          const nextTrack = findTrackForLanguage(button.dataset.subtitleLabel || label);
+          const nextTrack = await waitForTrackForLanguage(button.dataset.subtitleLabel || label);
           if (!nextTrack) {
             showToast("Subtitle track not found yet");
             return;
@@ -1009,6 +1019,36 @@
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
+  }
+
+  function getTrackSourceUrl(sources) {
+    if (!Array.isArray(sources)) return "";
+    const match = sources.find((item) => item && typeof item === "object" && (item.url || item.src || item.href || item.uri));
+    return match ? match.url || match.src || match.href || match.uri || "" : "";
+  }
+
+  async function waitForTrackForLanguage(label, attempts = 8, delayMs = 250) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      scanPerformanceEntries();
+      scanDomSubtitleSources();
+      scanBitmovinSubtitleTracks();
+
+      const track = findTrackForLanguage(label);
+      if (track) {
+        scheduleDownloadButtonInjection();
+        return track;
+      }
+
+      if (attempt < attempts - 1) {
+        await delay(delayMs);
+      }
+    }
+
+    return null;
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
   function looksLikeLanguagePanel(element) {
