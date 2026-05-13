@@ -1,11 +1,11 @@
 # Plex mpv Protocol Handler for Windows
 
-This handler registers `plex-mpv://` URLs and passes decoded Plex media URLs or generated M3U playlists to mpv.
+This handler registers `plex-mpv://` URLs and passes decoded Plex local file paths, Plex media URLs, or generated M3U playlists to mpv.
 
 ## Files
 
 - `openInMPV.vbs` launches the handler without showing a terminal window.
-- `openInMPV.ps1` decodes `plex-mpv://` URLs, writes temporary season playlists, and starts mpv.
+- `openInMPV.ps1` decodes `plex-mpv://` paths/URLs, writes temporary season playlists, and starts mpv.
 - `install-plex-mpv-handler.reg` is a registry template for registering the protocol.
 
 ## Install
@@ -25,8 +25,10 @@ The registered command should point to `openInMPV.vbs`, not directly to `openInM
 Run:
 
 ```powershell
-Start-Process 'plex-mpv:///?url=http%3A%2F%2F127.0.0.1%3A32400%2Fidentity'
+Start-Process 'plex-mpv:///?path=C%3A%5CMedia%5CTest.mkv'
 ```
+
+Current userscript versions prefer Plex's local `Part.file` path and send it as `path=`. The handler still accepts older `url=` launches for compatibility.
 
 The handler writes a sanitized log to:
 

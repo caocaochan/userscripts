@@ -18,6 +18,7 @@ if (-not $mpvPath) {
 }
 
 $logPath = Join-Path $env:TEMP "openInMPV.log"
+$path = $null
 $url = $null
 $playlist = $null
 
@@ -25,15 +26,57 @@ Get-ChildItem -Path $env:TEMP -Filter "plex-mpv-*.m3u8" -ErrorAction SilentlyCon
   Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } |
   Remove-Item -Force -ErrorAction SilentlyContinue
 
-if ($RawUrl -match '^(?:plex-mpv|mpv):///\?url=(.+)$') {
-  $url = [Uri]::UnescapeDataString($Matches[1])
-} elseif ($RawUrl -match '^(?:plex-mpv|mpv):///\?playlist=(.+)$') {
-  $playlist = [Uri]::UnescapeDataString($Matches[1])
-} elseif ($RawUrl -match '^(?:plex-mpv|mpv)://(.+)$') {
+function Decode-ProtocolValue {
+  param([string] $Value)
+
+  if ($null -eq $Value) {
+    return $null
+  }
+
+  [Uri]::UnescapeDataString(($Value -replace '\+', ' '))
+}
+
+function Get-ProtocolQueryParams {
+  param([string] $Value)
+
+  $params = @{}
+  if (-not $Value -or $Value -notmatch '^(?:plex-mpv|mpv):///\?(.+)$') {
+    return $params
+  }
+
+  foreach ($pair in ($Matches[1] -split '&')) {
+    if (-not $pair) {
+      continue
+    }
+
+    $parts = $pair -split '=', 2
+    $name = Decode-ProtocolValue $parts[0]
+    if (-not $name) {
+      continue
+    }
+
+    $params[$name] = if ($parts.Count -gt 1) {
+      Decode-ProtocolValue $parts[1]
+    } else {
+      ""
+    }
+  }
+
+  $params
+}
+
+$queryParams = Get-ProtocolQueryParams $RawUrl
+$path = $queryParams["path"]
+$url = $queryParams["url"]
+$playlist = $queryParams["playlist"]
+
+if (-not $path -and -not $url -and -not $playlist -and $RawUrl -match '^(?:plex-mpv|mpv)://(.+)$') {
   $url = [Uri]::UnescapeDataString($Matches[1])
 }
 
-$rawLogValue = if ($playlist) {
+$rawLogValue = if ($path) {
+  "<path>"
+} elseif ($playlist) {
   "<playlist>"
 } elseif ($url) {
   "<url>"
@@ -41,7 +84,9 @@ $rawLogValue = if ($playlist) {
   $RawUrl
 }
 
-$logValue = if ($playlist) {
+$logValue = if ($path) {
+  "path=$path"
+} elseif ($playlist) {
   $entryCount = ([regex]::Matches($playlist, "(?m)^#EXTINF:")).Count
   "playlist=$entryCount entries"
 } elseif ($url) {
@@ -51,6 +96,11 @@ $logValue = if ($playlist) {
 }
 
 Add-Content -Path $logPath -Value ("{0} raw={1} decoded={2}" -f (Get-Date).ToString("s"), $rawLogValue, $logValue)
+
+if ($path) {
+  Start-Process -FilePath $mpvPath -ArgumentList @($path)
+  exit 0
+}
 
 if ($playlist) {
   $playlistPath = Join-Path $env:TEMP ("plex-mpv-" + [guid]::NewGuid().ToString() + ".m3u8")

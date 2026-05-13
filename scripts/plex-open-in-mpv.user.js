@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.3.2
+// @version      0.3.3
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @description  Adds Open in mpv controls to local Plex detail pages and Home/library media cards.
@@ -706,7 +706,7 @@
 
   async function openItemInMpv(item, token) {
     if (item.type === "movie" || item.type === "episode") {
-      openSingleItemInMpv(item, token);
+      openSingleItemInMpv(item);
       return;
     }
 
@@ -723,49 +723,54 @@
     throw new Error("Open a movie, episode, season, or show item");
   }
 
-  function openSingleItemInMpv(item, token) {
+  function openSingleItemInMpv(item) {
     const part = pickBestPart(item);
     if (!part) {
-      showToast("No playable Plex media part found");
+      showToast("No local Plex file path found");
       return;
     }
 
-    const streamUrl = buildStreamUrl(part.key, token);
-    window.location.href = buildMpvUrl(streamUrl);
+    const filePath = normalizeLocalFilePath(part.file);
+    if (!filePath) {
+      showToast("No local Plex file path found");
+      return;
+    }
+
+    window.location.href = buildMpvPathUrl(filePath);
     showToast("Opening in mpv");
   }
 
   async function openSeasonInMpv(item, token) {
     const episodes = await fetchSeasonEpisodes(item.ratingKey, token);
-    openEpisodesAsPlaylist(episodes, token, "Opening season in mpv");
+    openEpisodesAsPlaylist(episodes, "Opening season in mpv");
   }
 
   async function openShowInMpv(item, token) {
     const seasons = await fetchShowSeasons(item.ratingKey, token);
     const firstSeason = pickFirstSeason(seasons);
     if (!firstSeason) {
-      showToast("No playable Plex media part found");
+      showToast("No local Plex file path found");
       return;
     }
 
     const episodes = await fetchSeasonEpisodes(firstSeason.ratingKey, token);
-    openEpisodesAsPlaylist(episodes, token, "Opening first season in mpv");
+    openEpisodesAsPlaylist(episodes, "Opening first season in mpv");
   }
 
-  function openEpisodesAsPlaylist(episodes, token, successMessage) {
+  function openEpisodesAsPlaylist(episodes, successMessage) {
     const entries = sortEpisodes(episodes)
       .map((episode) => ({
         episode,
         part: pickBestPart(episode),
       }))
-      .filter((entry) => entry.part);
+      .filter((entry) => entry.part && normalizeLocalFilePath(entry.part.file));
 
     if (!entries.length) {
-      showToast("No playable Plex media part found");
+      showToast("No local Plex file path found");
       return;
     }
 
-    const playlist = buildPlaylist(entries, token);
+    const playlist = buildPlaylist(entries);
     window.location.href = buildMpvPlaylistUrl(playlist);
     showToast(successMessage);
   }
@@ -853,6 +858,7 @@
         duration: numberValue(media.duration),
         parts: toArray(media.Part || media.part).map((part) => ({
           key: part.key || "",
+          file: part.file || "",
           size: numberValue(part.size),
           duration: numberValue(part.duration),
           container: part.container || media.container || "",
@@ -895,6 +901,7 @@
         duration: numberValue(mediaElement.getAttribute("duration")),
         parts: elementChildren(mediaElement, "Part").map((partElement) => ({
           key: partElement.getAttribute("key") || "",
+          file: partElement.getAttribute("file") || "",
           size: numberValue(partElement.getAttribute("size")),
           duration: numberValue(partElement.getAttribute("duration")),
           container: partElement.getAttribute("container") || mediaElement.getAttribute("container") || "",
@@ -907,12 +914,14 @@
     const candidates = [];
     item.media.forEach((media, mediaIndex) => {
       media.parts.forEach((part, partIndex) => {
-        if (!part.key) {
+        const file = normalizeLocalFilePath(part.file);
+        if (!file) {
           return;
         }
 
         candidates.push({
           key: part.key,
+          file,
           score: [
             resolutionValue(media.videoResolution),
             part.size,
@@ -939,27 +948,25 @@
     return 0;
   }
 
-  function buildStreamUrl(partKey, token) {
-    const url = new URL(partKey, window.location.origin);
-    url.searchParams.set("download", "1");
-    url.searchParams.set("X-Plex-Token", token);
-    return url.toString();
-  }
-
-  function buildMpvUrl(streamUrl) {
-    return `plex-mpv:///?url=${encodeURIComponent(streamUrl)}`;
+  function buildMpvPathUrl(filePath) {
+    return `plex-mpv:///?path=${encodeURIComponent(filePath)}`;
   }
 
   function buildMpvPlaylistUrl(playlistText) {
     return `plex-mpv:///?playlist=${encodeURIComponent(playlistText)}`;
   }
 
-  function buildPlaylist(entries, token) {
+  function buildPlaylist(entries) {
     const lines = ["#EXTM3U"];
     for (const entry of entries) {
+      const filePath = normalizeLocalFilePath(entry.part.file);
+      if (!filePath) {
+        continue;
+      }
+
       const duration = Math.floor((entry.part.duration || getEpisodeDuration(entry.episode)) / 1000);
       lines.push(`#EXTINF:${Number.isFinite(duration) && duration > 0 ? duration : -1},${formatEpisodeTitle(entry.episode)}`);
-      lines.push(buildStreamUrl(entry.part.key, token));
+      lines.push(filePath);
     }
 
     return `${lines.join("\n")}\n`;
@@ -1134,6 +1141,10 @@
     } catch {
       return value;
     }
+  }
+
+  function normalizeLocalFilePath(value) {
+    return normalizeText(value);
   }
 
   function toArray(value) {
