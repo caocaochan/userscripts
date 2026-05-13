@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.2.1
+// @version      0.2.2
 // @updateURL    https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js
-// @description  Adds an Open in mpv button to local Plex movie, episode, and season detail pages.
+// @description  Adds an Open in mpv button to local Plex movie, episode, season, and show detail pages.
 // @homepageURL   https://github.com/caocaochan/userscripts/tree/main/handlers/windows
 // @author       CaoCao
 // @match        http://127.0.0.1:32400/web/index.html*
@@ -154,7 +154,7 @@
         display: "none",
         disabled: true,
         label: READY_LABEL,
-        title: "Open a movie, episode, or season details page",
+        title: "Open a movie, episode, season, or show details page",
       });
       return;
     }
@@ -164,7 +164,7 @@
         display: "none",
         disabled: true,
         label: READY_LABEL,
-        title: "Open a movie, episode, or season details page",
+        title: "Open a movie, episode, season, or show details page",
       });
       return;
     }
@@ -276,7 +276,7 @@
 
     const ratingKey = getCurrentRatingKey();
     if (!ratingKey) {
-      showToast("Open a movie, episode, or season details page first");
+      showToast("Open a movie, episode, season, or show details page first");
       refreshButtonState();
       return;
     }
@@ -303,6 +303,11 @@
         return;
       }
 
+      if (item.type === "show") {
+        await openShowInMpv(item, token);
+        return;
+      }
+
       showToast("Open an episode or season page first");
     } catch (error) {
       showToast(error?.message || "Could not read Plex metadata");
@@ -326,10 +331,25 @@
 
   async function openSeasonInMpv(item, token) {
     const episodes = await fetchSeasonEpisodes(item.ratingKey, token);
+    openEpisodesAsPlaylist(episodes, token, "Opening season in mpv");
+  }
+
+  async function openShowInMpv(item, token) {
+    const seasons = await fetchShowSeasons(item.ratingKey, token);
+    const firstSeason = pickFirstSeason(seasons);
+    if (!firstSeason) {
+      showToast("No playable Plex media part found");
+      return;
+    }
+
+    const episodes = await fetchSeasonEpisodes(firstSeason.ratingKey, token);
+    openEpisodesAsPlaylist(episodes, token, "Opening first season in mpv");
+  }
+
+  function openEpisodesAsPlaylist(episodes, token, successMessage) {
     const entries = sortEpisodes(episodes)
-      .map((episode, originalIndex) => ({
+      .map((episode) => ({
         episode,
-        originalIndex,
         part: pickBestPart(episode),
       }))
       .filter((entry) => entry.part);
@@ -341,7 +361,7 @@
 
     const playlist = buildPlaylist(entries, token);
     window.location.href = buildMpvPlaylistUrl(playlist);
-    showToast("Opening season in mpv");
+    showToast(successMessage);
   }
 
   async function fetchMetadataItem(ratingKey, token) {
@@ -366,6 +386,13 @@
     url.searchParams.set("X-Plex-Token", token);
 
     return (await fetchMetadataItems(url, "Could not read Plex season episodes")).filter((item) => item.type === "episode");
+  }
+
+  async function fetchShowSeasons(ratingKey, token) {
+    const url = new URL(`/library/metadata/${encodeURIComponent(ratingKey)}/children`, window.location.origin);
+    url.searchParams.set("X-Plex-Token", token);
+
+    return (await fetchMetadataItems(url, "Could not read Plex season episodes")).filter((item) => item.type === "season");
   }
 
   async function fetchMetadataItems(url, failureMessage) {
@@ -557,6 +584,12 @@
       .map((episode, originalIndex) => ({ episode, originalIndex }))
       .sort((left, right) => compareEpisodeEntries(left, right))
       .map((entry) => entry.episode);
+  }
+
+  function pickFirstSeason(seasons) {
+    return seasons
+      .filter((season) => season.ratingKey && season.index > 0)
+      .sort((left, right) => compareNullableNumbers(left.index, right.index) || normalizeText(left.title).localeCompare(normalizeText(right.title)))[0] || null;
   }
 
   function compareEpisodeEntries(left, right) {
