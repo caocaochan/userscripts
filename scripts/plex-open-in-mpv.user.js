@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.1.2
-// @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
-// @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
+// @version      0.1.4
+// @updateURL    https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js
 // @description  Adds an Open in mpv button to local Plex movie detail pages.
 // @author       CaoCao
 // @match        http://127.0.0.1:32400/web/index.html*
@@ -457,7 +457,7 @@
   }
 
   function buildMpvUrl(streamUrl) {
-    return `mpv:///?url=${encodeURIComponent(streamUrl)}`;
+    return `plex-mpv:///?url=${encodeURIComponent(streamUrl)}`;
   }
 
   function getCurrentRatingKey() {
