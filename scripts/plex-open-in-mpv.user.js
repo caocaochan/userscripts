@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.2.3
+// @version      0.3.0
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
-// @description  Adds an Open in mpv button to local Plex movie, episode, season, and show detail pages.
+// @description  Adds Open in mpv controls to local Plex detail pages and Home/library media cards.
 // @homepageURL   https://github.com/caocaochan/userscripts/tree/main/handlers/windows
 // @author       CaoCao
 // @match        http://127.0.0.1:32400/web/index.html*
@@ -21,6 +21,10 @@
   const BUTTON_CLASS = "plex-open-in-mpv-inline-button";
   const BUTTON_ICON_CLASS = "plex-open-in-mpv-inline-button__icon";
   const BUTTON_LABEL_CLASS = "plex-open-in-mpv-inline-button__label";
+  const CARD_BUTTON_CLASS = "plex-open-in-mpv-card-button";
+  const CARD_BUTTON_ABSOLUTE_CLASS = "plex-open-in-mpv-card-button--absolute";
+  const CARD_PROCESSED_ATTR = "data-plex-open-in-mpv-card";
+  const CARD_SCAN_INTERVAL_MS = 800;
   const READY_LABEL = "Open in mpv";
   const LOADING_LABEL = "Resolving...";
   const TOKEN_KEYS = new Set(["authToken", "token", "X-Plex-Token", "xPlexToken", "plexToken"]);
@@ -96,6 +100,48 @@
       transform: translateX(-50%);
       pointer-events: none;
     }
+
+    [${CARD_PROCESSED_ATTR}="1"] {
+      position: relative;
+    }
+
+    .${CARD_BUTTON_CLASS} {
+      position: relative;
+      z-index: 3;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 38px;
+      height: 24px;
+      margin-left: 8px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 999px;
+      color: #111;
+      background: #e5a00d;
+      font: 700 11px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+      text-transform: lowercase;
+      white-space: nowrap;
+      cursor: pointer;
+      vertical-align: middle;
+    }
+
+    .${CARD_BUTTON_CLASS}:hover:not(:disabled) {
+      background: #f2b632;
+    }
+
+    .${CARD_BUTTON_CLASS}:disabled {
+      cursor: not-allowed;
+      opacity: 0.64;
+    }
+
+    .${CARD_BUTTON_ABSOLUTE_CLASS} {
+      position: absolute;
+      right: 6px;
+      bottom: 4px;
+      margin-left: 0;
+    }
   `;
 
   let button = null;
@@ -104,6 +150,7 @@
   let currentRatingKey = null;
   let isLoading = false;
   let lastPlayButton = null;
+  let uiRefreshTimer = 0;
 
   function addStyle() {
     if (typeof GM_addStyle === "function") {
@@ -269,6 +316,281 @@
     return score;
   }
 
+  function scheduleUiRefresh(delay = 100) {
+    window.clearTimeout(uiRefreshTimer);
+    uiRefreshTimer = window.setTimeout(refreshUi, delay);
+  }
+
+  function refreshUi() {
+    refreshButtonState();
+    scanCardsForButtons();
+  }
+
+  function scanCardsForButtons() {
+    const tokenAvailable = !!findPlexToken();
+    for (const { card, ratingKey } of findCandidateCards()) {
+      ensureCardButton(card, ratingKey, tokenAvailable);
+    }
+  }
+
+  function findCandidateCards() {
+    const candidates = new Map();
+    const selectors = [
+      'a[href*="/library/metadata"]',
+      'a[href*="%2Flibrary%2Fmetadata%2F"]',
+      'a[href*="key="]',
+      '[data-rating-key]',
+      '[data-key]',
+      '[data-testid*="/library/metadata"]',
+      '[data-testid*="%2Flibrary%2Fmetadata%2F"]',
+    ];
+
+    for (const element of document.querySelectorAll(selectors.join(","))) {
+      if (!(element instanceof HTMLElement) || shouldSkipCardSource(element)) {
+        continue;
+      }
+
+      const ratingKey = getCardRatingKey(element);
+      if (!ratingKey) {
+        continue;
+      }
+
+      const card = findCardContainer(element);
+      if (!card || shouldSkipCardContainer(card)) {
+        continue;
+      }
+
+      candidates.set(card, ratingKey);
+    }
+
+    return Array.from(candidates, ([card, ratingKey]) => ({ card, ratingKey }));
+  }
+
+  function ensureCardButton(card, ratingKey, tokenAvailable) {
+    if (card.getAttribute(CARD_PROCESSED_ATTR) === "1") {
+      const existingButton = card.querySelector(`.${CARD_BUTTON_CLASS}`);
+      if (existingButton instanceof HTMLButtonElement) {
+        existingButton.dataset.ratingKey = ratingKey;
+        existingButton.disabled = !tokenAvailable;
+        existingButton.title = tokenAvailable ? "Open in mpv" : "Plex token not found";
+        return;
+      }
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = CARD_BUTTON_CLASS;
+    button.textContent = "mpv";
+    button.dataset.ratingKey = ratingKey;
+    button.disabled = !tokenAvailable;
+    button.title = tokenAvailable ? "Open in mpv" : "Plex token not found";
+    button.setAttribute("aria-label", "Open this Plex item in mpv");
+
+    button.addEventListener("click", onCardButtonClick, true);
+    button.addEventListener("mousedown", stopCardButtonEvent, true);
+    button.addEventListener("pointerdown", stopCardButtonEvent, true);
+
+    const mount = findCardButtonMount(card);
+    if (mount) {
+      mount.appendChild(button);
+    } else {
+      button.classList.add(CARD_BUTTON_ABSOLUTE_CLASS);
+      card.appendChild(button);
+    }
+
+    card.setAttribute(CARD_PROCESSED_ATTR, "1");
+  }
+
+  async function onCardButtonClick(event) {
+    stopCardButtonEvent(event);
+
+    const button = event.currentTarget;
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    const ratingKey = button.dataset.ratingKey || "";
+    if (!ratingKey) {
+      showToast("No Plex item found for this card");
+      return;
+    }
+
+    const token = findPlexToken();
+    if (!token) {
+      showToast("Plex token not found");
+      return;
+    }
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "...";
+    button.title = "Resolving...";
+
+    try {
+      await openRatingKeyInMpv(ratingKey, token, "card");
+    } catch (error) {
+      showToast(error?.message || "Could not read Plex metadata");
+    } finally {
+      button.disabled = false;
+      button.textContent = originalText || "mpv";
+      button.title = "Open in mpv";
+    }
+  }
+
+  function stopCardButtonEvent(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+    }
+  }
+
+  function getCardRatingKey(element) {
+    let currentElement = element;
+    while (currentElement && currentElement !== document.body) {
+      const fromAttributes = getRatingKeyFromElementAttributes(currentElement);
+      if (fromAttributes) {
+        return fromAttributes;
+      }
+
+      currentElement = currentElement.parentElement;
+    }
+
+    return null;
+  }
+
+  function getRatingKeyFromElementAttributes(element) {
+    const values = [
+      element.getAttribute("href"),
+      element.getAttribute("data-rating-key"),
+      element.getAttribute("data-key"),
+      element.getAttribute("data-testid"),
+      element.getAttribute("aria-label"),
+    ].filter(Boolean);
+
+    for (const value of values) {
+      const ratingKey = extractRatingKeyFromString(value);
+      if (ratingKey) {
+        return ratingKey;
+      }
+    }
+
+    return null;
+  }
+
+  function extractRatingKeyFromString(value) {
+    const text = safeDecode(String(value || ""));
+    if (/^\d+$/.test(text)) {
+      return text;
+    }
+
+    const directMatch = text.match(/\/library\/metadata\/(\d+)(?:$|[/?#&])/);
+    if (directMatch) {
+      return directMatch[1];
+    }
+
+    const queryMatch = text.match(/[?&#]key=([^&#]+)/);
+    if (!queryMatch) {
+      return null;
+    }
+
+    const key = safeDecode(queryMatch[1]);
+    const keyMatch = key.match(/^\/library\/metadata\/(\d+)(?:$|[/?#])/);
+    return keyMatch ? keyMatch[1] : null;
+  }
+
+  function findCardContainer(element) {
+    let bestElement = null;
+    let bestScore = 0;
+    let currentElement = element;
+    let depth = 0;
+
+    while (currentElement && currentElement !== document.body && depth < 9) {
+      if (currentElement instanceof HTMLElement) {
+        const score = scoreCardContainer(currentElement);
+        if (score > bestScore) {
+          bestScore = score;
+          bestElement = currentElement;
+        }
+      }
+
+      currentElement = currentElement.parentElement;
+      depth += 1;
+    }
+
+    return bestElement || (element instanceof HTMLElement ? element.parentElement : null);
+  }
+
+  function scoreCardContainer(element) {
+    if (!isElementVisible(element) || shouldSkipCardContainer(element)) {
+      return 0;
+    }
+
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 80 || rect.height < 80 || rect.width > 430 || rect.height > 760) {
+      return 0;
+    }
+
+    let score = 1;
+    if (element.querySelector("img, picture")) {
+      score += 20;
+    }
+
+    const text = normalizeText(element.textContent);
+    if (text.length >= 4) {
+      score += Math.min(20, text.length / 8);
+    }
+
+    if (element.querySelector('a[href*="key="], a[href*="/library/metadata"], a[href*="%2Flibrary%2Fmetadata%2F"]')) {
+      score += 8;
+    }
+
+    return score;
+  }
+
+  function findCardButtonMount(card) {
+    const buttonSelector = `.${CARD_BUTTON_CLASS}`;
+    const textElements = Array.from(card.querySelectorAll("div, span, a")).filter((element) => {
+      if (!(element instanceof HTMLElement) || element.matches(buttonSelector) || !isElementVisible(element)) {
+        return false;
+      }
+
+      const rect = element.getBoundingClientRect();
+      const text = normalizeText(element.textContent);
+      return text.length > 0 && rect.width > 20 && rect.height > 8 && rect.height < 44;
+    });
+
+    const metadataElement = textElements.find((element) => /^(?:\d{4}|S\d+\s*.\s*E\d+|Season\s+\d+|\d+\s+seasons?)$/i.test(normalizeText(element.textContent)));
+    if (metadataElement?.parentElement && isReasonableCardMount(metadataElement.parentElement, card)) {
+      return metadataElement.parentElement;
+    }
+
+    const titleElement = textElements.find((element) => normalizeText(element.textContent).length >= 2);
+    if (titleElement?.parentElement && isReasonableCardMount(titleElement.parentElement, card)) {
+      return titleElement.parentElement;
+    }
+
+    return null;
+  }
+
+  function isReasonableCardMount(element, card) {
+    if (!card.contains(element)) {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    return rect.width <= cardRect.width + 2 && rect.height < 80;
+  }
+
+  function shouldSkipCardSource(element) {
+    return !!element.closest(`#${BUTTON_ID}, .${CARD_BUTTON_CLASS}, nav, [role="navigation"], [role="tablist"], [role="toolbar"]`);
+  }
+
+  function shouldSkipCardContainer(element) {
+    return !!element.closest(`#${BUTTON_ID}, nav, [role="navigation"], [role="tablist"], [role="toolbar"]`);
+  }
+
   async function onButtonClick() {
     if (isLoading) {
       return;
@@ -292,29 +614,41 @@
     refreshButtonState();
 
     try {
-      const item = await fetchMetadataItem(ratingKey, token);
-      if (item.type === "movie" || item.type === "episode") {
-        openSingleItemInMpv(item, token);
-        return;
-      }
-
-      if (item.type === "season") {
-        await openSeasonInMpv(item, token);
-        return;
-      }
-
-      if (item.type === "show") {
-        await openShowInMpv(item, token);
-        return;
-      }
-
-      showToast("Open an episode or season page first");
+      await openRatingKeyInMpv(ratingKey, token, "detail");
     } catch (error) {
       showToast(error?.message || "Could not read Plex metadata");
     } finally {
       isLoading = false;
       refreshButtonState();
     }
+  }
+
+  async function openRatingKeyInMpv(ratingKey, token, source) {
+    if (!ratingKey) {
+      throw new Error(source === "card" ? "No Plex item found for this card" : "Open a movie, episode, season, or show details page first");
+    }
+
+    const item = await fetchMetadataItem(ratingKey, token);
+    await openItemInMpv(item, token);
+  }
+
+  async function openItemInMpv(item, token) {
+    if (item.type === "movie" || item.type === "episode") {
+      openSingleItemInMpv(item, token);
+      return;
+    }
+
+    if (item.type === "season") {
+      await openSeasonInMpv(item, token);
+      return;
+    }
+
+    if (item.type === "show") {
+      await openShowInMpv(item, token);
+      return;
+    }
+
+    throw new Error("Open a movie, episode, season, or show item");
   }
 
   function openSingleItemInMpv(item, token) {
@@ -776,22 +1110,21 @@
   }
 
   function observeNavigation() {
-    window.addEventListener("hashchange", refreshButtonState, { passive: true });
-    window.addEventListener("popstate", refreshButtonState, { passive: true });
+    window.addEventListener("hashchange", () => scheduleUiRefresh(), { passive: true });
+    window.addEventListener("popstate", () => scheduleUiRefresh(), { passive: true });
 
     window.setInterval(() => {
       if (window.location.href === lastHref) {
+        scanCardsForButtons();
         return;
       }
 
       lastHref = window.location.href;
-      refreshButtonState();
-    }, 500);
+      scheduleUiRefresh(0);
+    }, CARD_SCAN_INTERVAL_MS);
 
     new MutationObserver(() => {
-      if (!button || !button.isConnected) {
-        refreshButtonState();
-      }
+      scheduleUiRefresh();
     }).observe(document.documentElement, {
       childList: true,
       subtree: true,
@@ -802,7 +1135,7 @@
     addStyle();
     ensureButton();
     lastHref = window.location.href;
-    refreshButtonState();
+    refreshUi();
     observeNavigation();
   }
 
