@@ -25,7 +25,7 @@ The registered command should point to `openInMPV.vbs`, not directly to `openInM
 Run:
 
 ```powershell
-Start-Process 'plex-mpv:///?path=C%3A%5CMedia%5CTest.mkv'
+Start-Process 'plex-mpv:///?path=C%3A%5CMedia%5CTest%20Movie.mkv'
 ```
 
 Current userscript versions prefer Plex's local `Part.file` path and send it as `path=`. The handler still accepts older `url=` launches for compatibility.

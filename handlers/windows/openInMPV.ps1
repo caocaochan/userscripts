@@ -36,6 +36,25 @@ function Decode-ProtocolValue {
   [Uri]::UnescapeDataString(($Value -replace '\+', ' '))
 }
 
+function Quote-ProcessArgument {
+  param([string] $Argument)
+
+  if ($null -eq $Argument) {
+    return '""'
+  }
+
+  $escaped = $Argument -replace '(\\*)"', '$1$1\"'
+  $escaped = $escaped -replace '(\\+)$', '$1$1'
+  '"' + $escaped + '"'
+}
+
+function Start-Mpv {
+  param([string[]] $Arguments)
+
+  $quotedArguments = $Arguments | ForEach-Object { Quote-ProcessArgument $_ }
+  Start-Process -FilePath $mpvPath -ArgumentList $quotedArguments
+}
+
 function Get-ProtocolQueryParams {
   param([string] $Value)
 
@@ -98,14 +117,14 @@ $logValue = if ($path) {
 Add-Content -Path $logPath -Value ("{0} raw={1} decoded={2}" -f (Get-Date).ToString("s"), $rawLogValue, $logValue)
 
 if ($path) {
-  Start-Process -FilePath $mpvPath -ArgumentList @($path)
+  Start-Mpv @($path)
   exit 0
 }
 
 if ($playlist) {
   $playlistPath = Join-Path $env:TEMP ("plex-mpv-" + [guid]::NewGuid().ToString() + ".m3u8")
   [System.IO.File]::WriteAllText($playlistPath, $playlist, [System.Text.UTF8Encoding]::new($false))
-  Start-Process -FilePath $mpvPath -ArgumentList @($playlistPath)
+  Start-Mpv @($playlistPath)
   exit 0
 }
 
@@ -113,4 +132,4 @@ if (-not $url) {
   exit 1
 }
 
-Start-Process -FilePath $mpvPath -ArgumentList @($url)
+Start-Mpv @($url)
