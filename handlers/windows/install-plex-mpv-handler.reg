@@ -1,0 +1,16 @@
+Windows Registry Editor Version 5.00
+
+; Replace C:\\Path\\To\\userscripts with the absolute path to this repository.
+; Example command value:
+; @="\"C:\\Windows\\System32\\wscript.exe\" \"C:\\Path\\To\\userscripts\\handlers\\windows\\openInMPV.vbs\" \"%1\""
+
+[HKEY_CURRENT_USER\Software\Classes\plex-mpv]
+@="URL:plex-mpv Protocol"
+"URL Protocol"=""
+
+[HKEY_CURRENT_USER\Software\Classes\plex-mpv\shell]
+
+[HKEY_CURRENT_USER\Software\Classes\plex-mpv\shell\open]
+
+[HKEY_CURRENT_USER\Software\Classes\plex-mpv\shell\open\command]
+@="\"C:\\Windows\\System32\\wscript.exe\" \"C:\\Path\\To\\userscripts\\handlers\\windows\\openInMPV.vbs\" \"%1\""

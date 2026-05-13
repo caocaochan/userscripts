@@ -31,9 +31,11 @@
     {
       "id": "plex-open-in-mpv",
       "name": "Plex Open in mpv",
-      "description": "Adds an Open in mpv button to local Plex movie, episode, and season detail pages and opens media through a local protocol handler.",
+      "description": "Adds an Open in mpv button to local Plex movie, episode, and season detail pages and opens media through the included Windows plex-mpv:// handler.",
       "installUrl": "https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js",
       "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/plex-open-in-mpv.user.js",
+      "handlerUrl": "https://github.com/caocaochan/userscripts/blob/main/handlers/windows/README.md",
+      "registryUrl": "https://github.com/caocaochan/userscripts/blob/main/handlers/windows/install-plex-mpv-handler.reg",
       "tags": [
         "tampermonkey",
         "plex",

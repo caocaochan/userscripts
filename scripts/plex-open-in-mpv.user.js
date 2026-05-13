@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.2.0
+// @version      0.2.1
 // @updateURL    https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js
 // @description  Adds an Open in mpv button to local Plex movie, episode, and season detail pages.
+// @homepageURL   https://github.com/caocaochan/userscripts/tree/main/handlers/windows
 // @author       CaoCao
 // @match        http://127.0.0.1:32400/web/index.html*
 // @match        http://localhost:32400/web/index.html*
