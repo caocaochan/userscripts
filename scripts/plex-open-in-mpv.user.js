@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.3.0
+// @version      0.3.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @description  Adds Open in mpv controls to local Plex detail pages and Home/library media cards.
@@ -54,7 +54,7 @@
       border-radius: 6px;
       color: #111;
       background: #e5a00d;
-      font: 700 16px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 600 16px/1 "Segoe UI Semibold", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       white-space: nowrap;
       cursor: pointer;
       touch-action: manipulation;
@@ -119,7 +119,7 @@
       border-radius: 999px;
       color: #111;
       background: #e5a00d;
-      font: 700 11px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font: 600 11px/1 "Segoe UI Semibold", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       letter-spacing: 0;
       text-transform: lowercase;
       white-space: nowrap;
@@ -235,21 +235,37 @@
   }
 
   function setButtonState({ display, disabled, label, title }) {
-    button.style.display = display;
-    button.disabled = disabled;
+    if (button.style.display !== display) {
+      button.style.display = display;
+    }
+
+    if (button.disabled !== disabled) {
+      button.disabled = disabled;
+    }
+
     setButtonLabel(label);
-    button.title = title;
-    button.setAttribute("aria-label", title);
+
+    if (button.title !== title) {
+      button.title = title;
+    }
+
+    if (button.getAttribute("aria-label") !== title) {
+      button.setAttribute("aria-label", title);
+    }
   }
 
   function setButtonLabel(label) {
     const labelElement = button.querySelector(`.${BUTTON_LABEL_CLASS}`);
     if (labelElement) {
-      labelElement.textContent = label;
+      if (labelElement.textContent !== label) {
+        labelElement.textContent = label;
+      }
       return;
     }
 
-    button.textContent = label;
+    if (button.textContent !== label) {
+      button.textContent = label;
+    }
   }
 
   function mountButtonNextToPlay() {
@@ -370,9 +386,18 @@
     if (card.getAttribute(CARD_PROCESSED_ATTR) === "1") {
       const existingButton = card.querySelector(`.${CARD_BUTTON_CLASS}`);
       if (existingButton instanceof HTMLButtonElement) {
-        existingButton.dataset.ratingKey = ratingKey;
-        existingButton.disabled = !tokenAvailable;
-        existingButton.title = tokenAvailable ? "Open in mpv" : "Plex token not found";
+        const title = tokenAvailable ? "Open in mpv" : "Plex token not found";
+        if (existingButton.dataset.ratingKey !== ratingKey) {
+          existingButton.dataset.ratingKey = ratingKey;
+        }
+
+        if (existingButton.disabled !== !tokenAvailable) {
+          existingButton.disabled = !tokenAvailable;
+        }
+
+        if (existingButton.title !== title) {
+          existingButton.title = title;
+        }
         return;
       }
     }
@@ -1123,12 +1148,41 @@
       scheduleUiRefresh(0);
     }, CARD_SCAN_INTERVAL_MS);
 
-    new MutationObserver(() => {
+    new MutationObserver((mutations) => {
+      if (mutations.every(isOwnUiMutation)) {
+        return;
+      }
+
       scheduleUiRefresh();
     }).observe(document.documentElement, {
       childList: true,
       subtree: true,
     });
+  }
+
+  function isOwnUiMutation(mutation) {
+    if (isOwnUiNode(mutation.target)) {
+      return true;
+    }
+
+    if (mutation.type !== "childList") {
+      return false;
+    }
+
+    const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
+    return changedNodes.length > 0 && changedNodes.every(isOwnUiNode);
+  }
+
+  function isOwnUiNode(node) {
+    if (node instanceof Text) {
+      return node.parentElement ? isOwnUiNode(node.parentElement) : false;
+    }
+
+    if (!(node instanceof Element)) {
+      return false;
+    }
+
+    return !!node.closest(`#${BUTTON_ID}, .${CARD_BUTTON_CLASS}, .${TOAST_CLASS}`);
   }
 
   function start() {
