@@ -195,7 +195,7 @@
       }
 
       const streamUrl = buildStreamUrl(part.key, token);
-      window.location.href = `mpv://${encodeURIComponent(streamUrl)}`;
+      window.location.href = buildMpvUrl(streamUrl);
       showToast("Opening in mpv");
     } catch (error) {
       showToast(error?.message || "Could not read Plex metadata");
@@ -350,6 +350,10 @@
     url.searchParams.set("download", "1");
     url.searchParams.set("X-Plex-Token", token);
     return url.toString();
+  }
+
+  function buildMpvUrl(streamUrl) {
+    return `mpv://${streamUrl}`;
   }
 
   function getCurrentRatingKey() {
