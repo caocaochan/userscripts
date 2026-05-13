@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.3.1
+// @version      0.3.2
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @description  Adds Open in mpv controls to local Plex detail pages and Home/library media cards.
@@ -23,6 +23,7 @@
   const BUTTON_LABEL_CLASS = "plex-open-in-mpv-inline-button__label";
   const CARD_BUTTON_CLASS = "plex-open-in-mpv-card-button";
   const CARD_BUTTON_ABSOLUTE_CLASS = "plex-open-in-mpv-card-button--absolute";
+  const CARD_BUTTON_MOUNT_CLASS = "plex-open-in-mpv-card-button-mount";
   const CARD_PROCESSED_ATTR = "data-plex-open-in-mpv-card";
   const CARD_SCAN_INTERVAL_MS = 800;
   const READY_LABEL = "Open in mpv";
@@ -108,6 +109,7 @@
     .${CARD_BUTTON_CLASS} {
       position: relative;
       z-index: 3;
+      flex: 0 0 auto;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -134,6 +136,14 @@
     .${CARD_BUTTON_CLASS}:disabled {
       cursor: not-allowed;
       opacity: 0.64;
+    }
+
+    .${CARD_BUTTON_MOUNT_CLASS} {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
     }
 
     .${CARD_BUTTON_ABSOLUTE_CLASS} {
@@ -417,6 +427,7 @@
 
     const mount = findCardButtonMount(card);
     if (mount) {
+      mount.classList.add(CARD_BUTTON_MOUNT_CLASS);
       mount.appendChild(button);
     } else {
       button.classList.add(CARD_BUTTON_ABSOLUTE_CLASS);
@@ -586,16 +597,52 @@
     });
 
     const metadataElement = textElements.find((element) => /^(?:\d{4}|S\d+\s*.\s*E\d+|Season\s+\d+|\d+\s+seasons?)$/i.test(normalizeText(element.textContent)));
-    if (metadataElement?.parentElement && isReasonableCardMount(metadataElement.parentElement, card)) {
-      return metadataElement.parentElement;
+    if (metadataElement) {
+      const mount = findCompactCardTextMount(metadataElement, card);
+      if (mount) {
+        return mount;
+      }
     }
 
     const titleElement = textElements.find((element) => normalizeText(element.textContent).length >= 2);
-    if (titleElement?.parentElement && isReasonableCardMount(titleElement.parentElement, card)) {
-      return titleElement.parentElement;
+    if (titleElement) {
+      const mount = findCompactCardTextMount(titleElement, card);
+      if (mount) {
+        return mount;
+      }
     }
 
     return null;
+  }
+
+  function findCompactCardTextMount(textElement, card) {
+    const targetText = normalizeText(textElement.textContent);
+    let currentElement = textElement;
+
+    while (currentElement && currentElement !== card.parentElement) {
+      if (currentElement instanceof HTMLElement && isCompactCardTextMount(currentElement, card, targetText)) {
+        return currentElement;
+      }
+
+      currentElement = currentElement.parentElement;
+    }
+
+    return null;
+  }
+
+  function isCompactCardTextMount(element, card, targetText) {
+    if (!card.contains(element) || !isElementVisible(element)) {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    return (
+      rect.width <= cardRect.width + 2 &&
+      rect.height >= 8 &&
+      rect.height <= 44 &&
+      normalizeText(element.textContent) === targetText
+    );
   }
 
   function isReasonableCardMount(element, card) {
