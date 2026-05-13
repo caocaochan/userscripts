@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.1.4
+// @version      0.2.0
 // @updateURL    https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://cdn.jsdelivr.net/gh/caocaochan/userscripts@main/scripts/plex-open-in-mpv.user.js
-// @description  Adds an Open in mpv button to local Plex movie detail pages.
+// @description  Adds an Open in mpv button to local Plex movie, episode, and season detail pages.
 // @author       CaoCao
 // @match        http://127.0.0.1:32400/web/index.html*
 // @match        http://localhost:32400/web/index.html*
@@ -125,7 +125,7 @@
     button.type = "button";
     button.classList.add(BUTTON_CLASS);
     button.innerHTML = `<span class="${BUTTON_ICON_CLASS}" aria-hidden="true"></span><span class="${BUTTON_LABEL_CLASS}">${READY_LABEL}</span>`;
-    button.setAttribute("aria-label", "Open this Plex movie in mpv");
+    button.setAttribute("aria-label", "Open this Plex item in mpv");
     button.addEventListener("click", onButtonClick);
 
     return button;
@@ -153,7 +153,7 @@
         display: "none",
         disabled: true,
         label: READY_LABEL,
-        title: "Open a movie details page",
+        title: "Open a movie, episode, or season details page",
       });
       return;
     }
@@ -163,7 +163,7 @@
         display: "none",
         disabled: true,
         label: READY_LABEL,
-        title: "Open a movie details page",
+        title: "Open a movie, episode, or season details page",
       });
       return;
     }
@@ -182,7 +182,7 @@
       display: "",
       disabled: isLoading,
       label: isLoading ? LOADING_LABEL : READY_LABEL,
-      title: isLoading ? "Resolving Plex media URL" : "Open this Plex movie in mpv",
+      title: isLoading ? "Resolving Plex media URL" : "Open this Plex item in mpv",
     });
   }
 
@@ -275,7 +275,7 @@
 
     const ratingKey = getCurrentRatingKey();
     if (!ratingKey) {
-      showToast("Open a movie details page first");
+      showToast("Open a movie, episode, or season details page first");
       refreshButtonState();
       return;
     }
@@ -291,16 +291,18 @@
     refreshButtonState();
 
     try {
-      const item = await fetchMovieMetadata(ratingKey, token);
-      const part = pickBestPart(item);
-      if (!part) {
-        showToast("No playable Plex media part found");
+      const item = await fetchMetadataItem(ratingKey, token);
+      if (item.type === "movie" || item.type === "episode") {
+        openSingleItemInMpv(item, token);
         return;
       }
 
-      const streamUrl = buildStreamUrl(part.key, token);
-      window.location.href = buildMpvUrl(streamUrl);
-      showToast("Opening in mpv");
+      if (item.type === "season") {
+        await openSeasonInMpv(item, token);
+        return;
+      }
+
+      showToast("Open an episode or season page first");
     } catch (error) {
       showToast(error?.message || "Could not read Plex metadata");
     } finally {
@@ -309,10 +311,63 @@
     }
   }
 
-  async function fetchMovieMetadata(ratingKey, token) {
+  function openSingleItemInMpv(item, token) {
+    const part = pickBestPart(item);
+    if (!part) {
+      showToast("No playable Plex media part found");
+      return;
+    }
+
+    const streamUrl = buildStreamUrl(part.key, token);
+    window.location.href = buildMpvUrl(streamUrl);
+    showToast("Opening in mpv");
+  }
+
+  async function openSeasonInMpv(item, token) {
+    const episodes = await fetchSeasonEpisodes(item.ratingKey, token);
+    const entries = sortEpisodes(episodes)
+      .map((episode, originalIndex) => ({
+        episode,
+        originalIndex,
+        part: pickBestPart(episode),
+      }))
+      .filter((entry) => entry.part);
+
+    if (!entries.length) {
+      showToast("No playable Plex media part found");
+      return;
+    }
+
+    const playlist = buildPlaylist(entries, token);
+    window.location.href = buildMpvPlaylistUrl(playlist);
+    showToast("Opening season in mpv");
+  }
+
+  async function fetchMetadataItem(ratingKey, token) {
     const url = new URL(`/library/metadata/${encodeURIComponent(ratingKey)}`, window.location.origin);
     url.searchParams.set("X-Plex-Token", token);
 
+    const items = await fetchMetadataItems(url, "Could not read Plex metadata");
+    const item = items[0];
+    if (!item) {
+      throw new Error("Could not read Plex metadata");
+    }
+
+    if (!item.ratingKey) {
+      item.ratingKey = String(ratingKey);
+    }
+
+    return item;
+  }
+
+  async function fetchSeasonEpisodes(ratingKey, token) {
+    const url = new URL(`/library/metadata/${encodeURIComponent(ratingKey)}/children`, window.location.origin);
+    url.searchParams.set("X-Plex-Token", token);
+
+    return (await fetchMetadataItems(url, "Could not read Plex season episodes")).filter((item) => item.type === "episode");
+  }
+
+  async function fetchMetadataItems(url, failureMessage) {
     let response;
     try {
       response = await fetch(url.toString(), {
@@ -322,64 +377,57 @@
         },
       });
     } catch {
-      throw new Error("Could not read Plex metadata");
+      throw new Error(failureMessage);
     }
 
     if (!response.ok) {
-      throw new Error("Could not read Plex metadata");
+      throw new Error(failureMessage);
     }
 
     const text = await response.text();
-    const item = parseMetadataResponse(text);
-
-    if (!item || item.type !== "movie") {
-      throw new Error("Open a movie details page first");
-    }
-
-    if (!item.media.length) {
-      throw new Error("No playable Plex media part found");
-    }
-
-    return item;
+    return parseMetadataItems(text);
   }
 
-  function parseMetadataResponse(text) {
-    const jsonItem = parseJsonMetadata(text);
-    if (jsonItem) {
-      return jsonItem;
+  function parseMetadataItems(text) {
+    const jsonItems = parseJsonMetadataItems(text);
+    if (jsonItems) {
+      return jsonItems;
     }
 
-    return parseXmlMetadata(text);
+    return parseXmlMetadataItems(text) || [];
   }
 
-  function parseJsonMetadata(text) {
+  function parseJsonMetadataItems(text) {
     try {
       const payload = JSON.parse(text);
       const metadata = payload?.MediaContainer?.Metadata || payload?.MediaContainer?.metadata || payload?.Metadata || payload?.metadata;
-      const item = toArray(metadata)[0];
-      if (!item) {
-        return null;
-      }
-
-      return {
-        type: String(item.type || ""),
-        media: toArray(item.Media || item.media).map((media) => ({
-          videoResolution: media.videoResolution || media.videoResolutionID || media.videoProfile || "",
-          duration: numberValue(media.duration),
-          parts: toArray(media.Part || media.part).map((part) => ({
-            key: part.key || "",
-            size: numberValue(part.size),
-            duration: numberValue(part.duration),
-            container: part.container || media.container || "",
-          })),
-        })),
-      };
+      return toArray(metadata).map(normalizeJsonItem);
     } catch {
       return null;
     }
   }
 
-  function parseXmlMetadata(text) {
+  function normalizeJsonItem(item) {
+    return {
+      type: String(item.type || ""),
+      title: String(item.title || ""),
+      index: numberValue(item.index),
+      parentIndex: numberValue(item.parentIndex),
+      ratingKey: String(item.ratingKey || item.ratingkey || ""),
+      media: toArray(item.Media || item.media).map((media) => ({
+        videoResolution: media.videoResolution || media.videoResolutionID || media.videoProfile || "",
+        duration: numberValue(media.duration),
+        parts: toArray(media.Part || media.part).map((part) => ({
+          key: part.key || "",
+          size: numberValue(part.size),
+          duration: numberValue(part.duration),
+          container: part.container || media.container || "",
+        })),
+      })),
+    };
+  }
+
+  function parseXmlMetadataItems(text) {
     let doc;
     try {
       doc = new DOMParser().parseFromString(text, "application/xml");
@@ -391,25 +439,33 @@
       return null;
     }
 
-    const video = doc.querySelector("MediaContainer > Video") || doc.querySelector("Video");
-    if (!video) {
-      return null;
+    const container = doc.querySelector("MediaContainer");
+    if (!container) {
+      return [];
     }
 
-    const media = elementChildren(video, "Media").map((mediaElement) => ({
-      videoResolution: mediaElement.getAttribute("videoResolution") || mediaElement.getAttribute("videoResolutionID") || mediaElement.getAttribute("videoProfile") || "",
-      duration: numberValue(mediaElement.getAttribute("duration")),
-      parts: elementChildren(mediaElement, "Part").map((partElement) => ({
-        key: partElement.getAttribute("key") || "",
-        size: numberValue(partElement.getAttribute("size")),
-        duration: numberValue(partElement.getAttribute("duration")),
-        container: partElement.getAttribute("container") || mediaElement.getAttribute("container") || "",
-      })),
-    }));
+    return Array.from(container.children)
+      .filter((element) => element.tagName === "Video" || element.tagName === "Directory")
+      .map(normalizeXmlItem);
+  }
 
+  function normalizeXmlItem(element) {
     return {
-      type: video.getAttribute("type") || "",
-      media,
+      type: element.getAttribute("type") || "",
+      title: element.getAttribute("title") || "",
+      index: numberValue(element.getAttribute("index")),
+      parentIndex: numberValue(element.getAttribute("parentIndex")),
+      ratingKey: element.getAttribute("ratingKey") || "",
+      media: elementChildren(element, "Media").map((mediaElement) => ({
+        videoResolution: mediaElement.getAttribute("videoResolution") || mediaElement.getAttribute("videoResolutionID") || mediaElement.getAttribute("videoProfile") || "",
+        duration: numberValue(mediaElement.getAttribute("duration")),
+        parts: elementChildren(mediaElement, "Part").map((partElement) => ({
+          key: partElement.getAttribute("key") || "",
+          size: numberValue(partElement.getAttribute("size")),
+          duration: numberValue(partElement.getAttribute("duration")),
+          container: partElement.getAttribute("container") || mediaElement.getAttribute("container") || "",
+        })),
+      })),
     };
   }
 
@@ -458,6 +514,61 @@
 
   function buildMpvUrl(streamUrl) {
     return `plex-mpv:///?url=${encodeURIComponent(streamUrl)}`;
+  }
+
+  function buildMpvPlaylistUrl(playlistText) {
+    return `plex-mpv:///?playlist=${encodeURIComponent(playlistText)}`;
+  }
+
+  function buildPlaylist(entries, token) {
+    const lines = ["#EXTM3U"];
+    for (const entry of entries) {
+      const duration = Math.floor((entry.part.duration || getEpisodeDuration(entry.episode)) / 1000);
+      lines.push(`#EXTINF:${Number.isFinite(duration) && duration > 0 ? duration : -1},${formatEpisodeTitle(entry.episode)}`);
+      lines.push(buildStreamUrl(entry.part.key, token));
+    }
+
+    return `${lines.join("\n")}\n`;
+  }
+
+  function getEpisodeDuration(episode) {
+    const mediaDurations = episode.media.map((media) => media.duration).filter(Boolean);
+    return mediaDurations[0] || 0;
+  }
+
+  function formatEpisodeTitle(episode) {
+    const title = normalizeText(episode.title) || `Episode ${episode.index || episode.ratingKey || ""}`.trim();
+    const season = episode.parentIndex ? String(episode.parentIndex).padStart(2, "0") : "";
+    const episodeIndex = episode.index ? String(episode.index).padStart(2, "0") : "";
+    if (season && episodeIndex) {
+      return `S${season}E${episodeIndex} - ${title}`;
+    }
+
+    if (episodeIndex) {
+      return `E${episodeIndex} - ${title}`;
+    }
+
+    return title;
+  }
+
+  function sortEpisodes(episodes) {
+    return episodes
+      .map((episode, originalIndex) => ({ episode, originalIndex }))
+      .sort((left, right) => compareEpisodeEntries(left, right))
+      .map((entry) => entry.episode);
+  }
+
+  function compareEpisodeEntries(left, right) {
+    return compareNullableNumbers(left.episode.parentIndex, right.episode.parentIndex)
+      || compareNullableNumbers(left.episode.index, right.episode.index)
+      || normalizeText(left.episode.title).localeCompare(normalizeText(right.episode.title))
+      || left.originalIndex - right.originalIndex;
+  }
+
+  function compareNullableNumbers(left, right) {
+    const leftValue = left || Number.POSITIVE_INFINITY;
+    const rightValue = right || Number.POSITIVE_INFINITY;
+    return leftValue - rightValue;
   }
 
   function getCurrentRatingKey() {
