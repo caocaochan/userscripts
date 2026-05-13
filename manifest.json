@@ -27,6 +27,19 @@
         "subtitles",
         "yomitan"
       ]
+    },
+    {
+      "id": "plex-open-in-mpv",
+      "name": "Plex Open in mpv",
+      "description": "Adds an Open in mpv button to local Plex movie detail pages and opens the best original media part through an mpv:// protocol handler.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/plex-open-in-mpv.user.js",
+      "tags": [
+        "tampermonkey",
+        "plex",
+        "mpv",
+        "media"
+      ]
     }
   ]
 }
