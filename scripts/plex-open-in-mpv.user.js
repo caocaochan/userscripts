@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @description  Adds an Open in mpv button to local Plex movie detail pages.
@@ -17,6 +17,9 @@
 
   const BUTTON_ID = "plex-open-in-mpv-button";
   const TOAST_CLASS = "plex-open-in-mpv-toast";
+  const BUTTON_CLASS = "plex-open-in-mpv-inline-button";
+  const BUTTON_ICON_CLASS = "plex-open-in-mpv-inline-button__icon";
+  const BUTTON_LABEL_CLASS = "plex-open-in-mpv-inline-button__label";
   const READY_LABEL = "Open in mpv";
   const LOADING_LABEL = "Resolving...";
   const TOKEN_KEYS = new Set(["authToken", "token", "X-Plex-Token", "xPlexToken", "plexToken"]);
@@ -30,32 +33,50 @@
 
   const css = `
     #${BUTTON_ID} {
-      position: fixed;
-      right: 18px;
-      bottom: 72px;
-      z-index: 2147483647;
-      display: none;
-      min-width: 116px;
-      height: 40px;
-      padding: 0 14px;
-      border: 1px solid rgba(255, 255, 255, 0.22);
-      border-radius: 999px;
-      color: #f8fafc;
-      background: rgba(17, 24, 39, 0.88);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
-      backdrop-filter: blur(8px);
-      font: 700 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      cursor: pointer;
-      touch-action: manipulation;
+      flex: 0 0 auto;
     }
 
-    #${BUTTON_ID}:hover:not(:disabled) {
-      background: rgba(31, 41, 55, 0.94);
+    #${BUTTON_ID}.${BUTTON_CLASS} {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-width: 132px;
+      min-height: 44px;
+      margin-left: 12px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 6px;
+      color: #111;
+      background: #e5a00d;
+      font: 700 16px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      white-space: nowrap;
+      cursor: pointer;
+      touch-action: manipulation;
+      vertical-align: middle;
+    }
+
+    #${BUTTON_ID}.${BUTTON_CLASS}:hover:not(:disabled) {
+      background: #f2b632;
     }
 
     #${BUTTON_ID}:disabled {
       cursor: not-allowed;
       opacity: 0.64;
+    }
+
+    .${BUTTON_ICON_CLASS} {
+      display: inline-block;
+      width: 0;
+      height: 0;
+      border-top: 9px solid transparent;
+      border-bottom: 9px solid transparent;
+      border-left: 15px solid currentColor;
+    }
+
+    .${BUTTON_LABEL_CLASS} {
+      display: inline-block;
+      min-width: 0;
     }
 
     .${TOAST_CLASS} {
@@ -81,6 +102,7 @@
   let lastHref = "";
   let currentRatingKey = null;
   let isLoading = false;
+  let lastPlayButton = null;
 
   function addStyle() {
     if (typeof GM_addStyle === "function") {
@@ -101,13 +123,10 @@
     button = document.getElementById(BUTTON_ID) || document.createElement("button");
     button.id = BUTTON_ID;
     button.type = "button";
-    button.textContent = READY_LABEL;
+    button.classList.add(BUTTON_CLASS);
+    button.innerHTML = `<span class="${BUTTON_ICON_CLASS}" aria-hidden="true"></span><span class="${BUTTON_LABEL_CLASS}">${READY_LABEL}</span>`;
     button.setAttribute("aria-label", "Open this Plex movie in mpv");
     button.addEventListener("click", onButtonClick);
-
-    if (!button.parentNode) {
-      document.body.appendChild(button);
-    }
 
     return button;
   }
@@ -129,6 +148,17 @@
 
     currentRatingKey = getCurrentRatingKey();
     if (!currentRatingKey) {
+      detachButton();
+      setButtonState({
+        display: "none",
+        disabled: true,
+        label: READY_LABEL,
+        title: "Open a movie details page",
+      });
+      return;
+    }
+
+    if (!mountButtonNextToPlay()) {
       setButtonState({
         display: "none",
         disabled: true,
@@ -140,7 +170,7 @@
 
     if (!findPlexToken()) {
       setButtonState({
-        display: "block",
+        display: "",
         disabled: true,
         label: READY_LABEL,
         title: "Plex token not found",
@@ -149,7 +179,7 @@
     }
 
     setButtonState({
-      display: "block",
+      display: "",
       disabled: isLoading,
       label: isLoading ? LOADING_LABEL : READY_LABEL,
       title: isLoading ? "Resolving Plex media URL" : "Open this Plex movie in mpv",
@@ -159,9 +189,83 @@
   function setButtonState({ display, disabled, label, title }) {
     button.style.display = display;
     button.disabled = disabled;
-    button.textContent = label;
+    setButtonLabel(label);
     button.title = title;
     button.setAttribute("aria-label", title);
+  }
+
+  function setButtonLabel(label) {
+    const labelElement = button.querySelector(`.${BUTTON_LABEL_CLASS}`);
+    if (labelElement) {
+      labelElement.textContent = label;
+      return;
+    }
+
+    button.textContent = label;
+  }
+
+  function mountButtonNextToPlay() {
+    const playButton = findPlayButton();
+    if (!playButton) {
+      return false;
+    }
+
+    if (lastPlayButton !== playButton) {
+      copyPlayButtonClass(playButton);
+      lastPlayButton = playButton;
+    }
+
+    if (button.previousElementSibling === playButton && button.parentElement === playButton.parentElement) {
+      return true;
+    }
+
+    playButton.insertAdjacentElement("afterend", button);
+    return true;
+  }
+
+  function detachButton() {
+    button?.remove();
+    lastPlayButton = null;
+  }
+
+  function copyPlayButtonClass(playButton) {
+    const className = typeof playButton.className === "string" ? playButton.className : "";
+    button.className = `${className} ${BUTTON_CLASS}`.trim();
+  }
+
+  function findPlayButton() {
+    const candidates = Array.from(document.querySelectorAll('button, a[role="button"]')).filter((element) => {
+      if (!(element instanceof HTMLElement) || element.id === BUTTON_ID || !isElementVisible(element)) {
+        return false;
+      }
+
+      const text = normalizeText(element.textContent);
+      const ariaLabel = normalizeText(element.getAttribute("aria-label"));
+      const title = normalizeText(element.getAttribute("title"));
+      return text === "Play" || ariaLabel === "Play" || title === "Play";
+    });
+
+    candidates.sort((left, right) => scorePlayButton(right) - scorePlayButton(left));
+    return candidates[0] || null;
+  }
+
+  function scorePlayButton(element) {
+    const rect = element.getBoundingClientRect();
+    let score = 0;
+
+    if (normalizeText(element.textContent) === "Play") {
+      score += 20;
+    }
+
+    if (rect.width >= 70 && rect.height >= 34) {
+      score += 10;
+    }
+
+    if (rect.left > window.innerWidth * 0.2 && rect.top > window.innerHeight * 0.15) {
+      score += 6;
+    }
+
+    return score;
   }
 
   async function onButtonClick() {
@@ -491,6 +595,20 @@
 
   function elementChildren(element, tagName) {
     return Array.from(element.children).filter((child) => child.tagName === tagName);
+  }
+
+  function isElementVisible(element) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
+
+    const style = window.getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden" && element.getAttribute("aria-hidden") !== "true";
+  }
+
+  function normalizeText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
   }
 
   function numberValue(value) {
