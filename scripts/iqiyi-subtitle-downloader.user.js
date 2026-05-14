@@ -1,12 +1,10 @@
 // ==UserScript==
 // @name         iQIYI Subtitle SRT Downloader
 // @namespace    local.iqdl
-// @version      0.1.2
+// @version      0.1.3
 // @description  Add SRT download buttons beside iQIYI subtitle languages.
 // @match        https://www.iq.com/play/*
 // @match        https://iq.com/play/*
-// @match        https://*.iq.com/*
-// @match        https://*.iqiyi.com/*
 // @include      https://www.iq.com/play/*
 // @include      https://iq.com/play/*
 // @run-at       document-start
@@ -16,9 +14,7 @@
 // @connect      cache-video.iq.com
 // @connect      www.iq.com
 // @connect      iq.com
-// @connect      iqiyi.com
 // @connect      *.iq.com
-// @connect      *.iqiyi.com
 // ==/UserScript==
 
 (function () {
