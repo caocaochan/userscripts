@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         iQIYI Subtitle SRT Downloader
 // @namespace    local.iqdl
-// @version      0.1.0
+// @version      0.1.1
 // @description  Add SRT download buttons beside iQIYI subtitle languages.
+// @match        https://www.iq.com/play/*
+// @match        https://iq.com/play/*
 // @match        https://*.iq.com/*
 // @match        https://*.iqiyi.com/*
 // @run-at       document-start
@@ -12,6 +14,8 @@
 // @connect      cache-video.iq.com
 // @connect      iq.com
 // @connect      iqiyi.com
+// @connect      *.iq.com
+// @connect      *.iqiyi.com
 // ==/UserScript==
 
 (function () {
@@ -19,8 +23,9 @@
 
   const pageWindow = typeof unsafeWindow === 'undefined' ? window : unsafeWindow;
   const SUBTITLE_BASE_URL = 'https://meta.video.iqiyi.com';
-  const DASH_URL_PATTERN = /https?:\/\/cache-video\.iq\.com\/.*(?:^|\/)dash(?:\?|$)|\/dash(?:\?|$)/i;
+  const DASH_URL_PATTERN = /(?:^https?:\/\/[^?#]+)?\/dash(?:[/?#]|$)/i;
   const SCRIPT_PREFIX = 'iqdl';
+  const DEBUG = false;
   const SCAN_INTERVAL_FAST_MS = 800;
   const SCAN_INTERVAL_SLOW_MS = 5000;
   const ROUTE_CHECK_INTERVAL_MS = 1000;
@@ -49,6 +54,13 @@
     menuOpen: false,
     observer: null,
   };
+
+  debug('startup', {
+    url: location.href,
+    hasGmXmlHttpRequest: typeof GM_xmlhttpRequest === 'function',
+    hasUnsafeWindow: typeof unsafeWindow !== 'undefined',
+    readyState: document.readyState,
+  });
 
   installNetworkHooks();
   installRouteHooks();
@@ -304,7 +316,7 @@
     }
 
     if (changed) {
-      console.debug(`[${SCRIPT_PREFIX}] subtitles updated from ${sourceLabel}`, Array.from(state.subtitles.values()));
+      debug(`subtitles updated from ${sourceLabel}`, Array.from(state.subtitles.values()));
       updateFallbackUi();
       scheduleInlineRefresh();
     }
@@ -626,6 +638,10 @@
 
     try {
       const rawText = await requestText(subtitle.url);
+      if (!rawText.trim()) {
+        throw new Error(`Empty subtitle response: ${subtitle.url}`);
+      }
+
       const looksVtt = /^\uFEFF?\s*WEBVTT(?:\s|$)/i.test(rawText);
       let srtText;
 
@@ -659,28 +675,63 @@
           url,
           responseType: 'text',
           onload(response) {
-            if (response.status >= 200 && response.status < 300) {
-              resolve(String(response.responseText || ''));
+            const status = Number(response.status || 0);
+            const responseText = String(response.responseText || '');
+
+            if (status >= 200 && status < 300) {
+              if (!responseText.trim()) {
+                reject(new Error(`Empty response from ${url}`));
+                return;
+              }
+              resolve(responseText);
             } else {
-              reject(new Error(`HTTP ${response.status}`));
+              reject(new Error(`GM_xmlhttpRequest HTTP ${status || 'unknown'} from ${url}`));
             }
           },
-          onerror: reject,
-          ontimeout: reject,
+          onerror(error) {
+            reject(new Error(`GM_xmlhttpRequest network error from ${url}: ${formatRequestError(error)}`));
+          },
+          ontimeout(error) {
+            reject(new Error(`GM_xmlhttpRequest timeout from ${url}: ${formatRequestError(error)}`));
+          },
         });
         return;
       }
 
+      debug('GM_xmlhttpRequest unavailable; falling back to fetch', { url });
       fetch(url, { credentials: 'include' })
         .then((response) => {
           if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            throw new Error(`fetch HTTP ${response.status} from ${url}`);
           }
           return response.text();
         })
+        .then((text) => {
+          if (!text.trim()) {
+            throw new Error(`Empty fetch response from ${url}`);
+          }
+          return text;
+        })
         .then(resolve)
-        .catch(reject);
+        .catch((error) => {
+          reject(new Error(`GM_xmlhttpRequest unavailable; fetch failed from ${url}: ${formatRequestError(error)}`));
+        });
     });
+  }
+
+  function formatRequestError(error) {
+    if (!error) {
+      return 'unknown error';
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch (jsonError) {
+      noop(jsonError);
+      return String(error);
+    }
   }
 
   function normalizeSrt(text) {
@@ -858,6 +909,12 @@
 
   function isDashUrl(url) {
     return DASH_URL_PATTERN.test(String(url || ''));
+  }
+
+  function debug(...args) {
+    if (DEBUG) {
+      console.debug(`[${SCRIPT_PREFIX}]`, ...args);
+    }
   }
 
   function waitForBody(callback) {
