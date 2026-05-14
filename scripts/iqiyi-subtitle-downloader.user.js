@@ -1,24 +1,18 @@
 // ==UserScript==
 // @name         iQIYI Subtitle SRT Downloader
 // @namespace    local.iqdl
-// @version      0.1.4
+// @version      0.2.0
 // @description  Add SRT download buttons beside iQIYI subtitle languages.
 // @match        https://www.iq.com/play/*
 // @match        https://iq.com/play/*
 // @run-at       document-start
-// @grant        unsafeWindow
-// @grant        GM_xmlhttpRequest
-// @connect      meta.video.iqiyi.com
-// @connect      cache-video.iq.com
-// @connect      www.iq.com
-// @connect      iq.com
-// @connect      *.iq.com
+// @grant        none
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const pageWindow = typeof unsafeWindow === 'undefined' ? window : unsafeWindow;
+  const pageWindow = window;
   const SUBTITLE_BASE_URL = 'https://meta.video.iqiyi.com';
   const DASH_URL_PATTERN = /(?:^https?:\/\/[^?#]+)?\/dash(?:[/?#]|$)/i;
   const SCRIPT_PREFIX = 'iqdl';
@@ -54,8 +48,8 @@
 
   debug('startup', {
     url: location.href,
-    hasGmXmlHttpRequest: typeof GM_xmlhttpRequest === 'function',
-    hasUnsafeWindow: typeof unsafeWindow !== 'undefined',
+    hasGmXmlHttpRequest: false,
+    hasUnsafeWindow: false,
     readyState: document.readyState,
   });
 
@@ -666,36 +660,7 @@
 
   function requestText(url) {
     return new Promise((resolve, reject) => {
-      if (typeof GM_xmlhttpRequest === 'function') {
-        GM_xmlhttpRequest({
-          method: 'GET',
-          url,
-          responseType: 'text',
-          onload(response) {
-            const status = Number(response.status || 0);
-            const responseText = String(response.responseText || '');
-
-            if (status >= 200 && status < 300) {
-              if (!responseText.trim()) {
-                reject(new Error(`Empty response from ${url}`));
-                return;
-              }
-              resolve(responseText);
-            } else {
-              reject(new Error(`GM_xmlhttpRequest HTTP ${status || 'unknown'} from ${url}`));
-            }
-          },
-          onerror(error) {
-            reject(new Error(`GM_xmlhttpRequest network error from ${url}: ${formatRequestError(error)}`));
-          },
-          ontimeout(error) {
-            reject(new Error(`GM_xmlhttpRequest timeout from ${url}: ${formatRequestError(error)}`));
-          },
-        });
-        return;
-      }
-
-      debug('GM_xmlhttpRequest unavailable; falling back to fetch', { url });
+      debug('fetching subtitle text', { url });
       fetch(url, { credentials: 'include' })
         .then((response) => {
           if (!response.ok) {
@@ -711,7 +676,7 @@
         })
         .then(resolve)
         .catch((error) => {
-          reject(new Error(`GM_xmlhttpRequest unavailable; fetch failed from ${url}: ${formatRequestError(error)}`));
+          reject(new Error(`Fetch failed from ${url}. If this is a CORS error, use the GM_xmlhttpRequest build instead. ${formatRequestError(error)}`));
         });
     });
   }
