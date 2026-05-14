@@ -15,6 +15,3 @@ Userscripts in this repo can be installed directly from the raw file URL in a us
   Adds an `Open in mpv` button to local Plex detail pages and small `mpv` buttons on Home/library media cards at `127.0.0.1:32400` / `localhost:32400`, resolving the best original media parts and handing them to an installed `plex-mpv://` protocol handler.
 
   Requires a working `plex-mpv://` protocol handler on the machine. Season pages open an ordered M3U playlist in mpv, and show pages open the first season. A generic Windows handler is included in [`handlers/windows`](handlers/windows), with install notes in [`handlers/windows/README.md`](handlers/windows/README.md) and a registry template at [`handlers/windows/install-plex-mpv-handler.reg`](handlers/windows/install-plex-mpv-handler.reg). Browsers/userscripts cannot launch `mpv.exe` directly without an external protocol handler or helper.
-
-- **iQIYI Subtitle SRT Downloader**
-  Adds SRT download buttons beside detected subtitle languages on `iq.com` and `iqiyi.com`, plus a floating fallback menu when the subtitle menu DOM changes.
