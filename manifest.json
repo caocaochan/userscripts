@@ -42,6 +42,19 @@
         "mpv",
         "media"
       ]
+    },
+    {
+      "id": "iqiyi-subtitle-downloader",
+      "name": "iQIYI Subtitle SRT Downloader",
+      "description": "Adds SRT download buttons beside iQIYI subtitle languages on iq.com and iqiyi.com, with a fallback subtitle download menu.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/iqiyi-subtitle-downloader.user.js",
+      "tags": [
+        "tampermonkey",
+        "iqiyi",
+        "subtitles",
+        "srt"
+      ]
     }
   ]
 }
