@@ -129,8 +129,8 @@
       padding: 0 10px;
       border: 0;
       border-radius: 7px;
-      color: #07150b;
-      background: #36d661;
+      color: #fff;
+      background: #b940ff;
       font: 800 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
       cursor: pointer;
@@ -138,7 +138,7 @@
     }
 
     #${PANEL_ID} .${BUTTON_CLASS}:hover:not(:disabled) {
-      background: #5ee77f;
+      background: #d16bff;
     }
 
     #${PANEL_ID} .${BUTTON_CLASS}:disabled {
@@ -159,9 +159,9 @@
       padding: 0 14px;
       border: 0;
       border-radius: 8px;
-      color: #07150b;
-      background: #36d661;
-      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+      color: #fff;
+      background: #b940ff;
+      box-shadow: 0 10px 26px rgba(185, 64, 255, 0.28);
       font: 800 14px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
       cursor: pointer;
@@ -170,7 +170,7 @@
 
     #${LAUNCHER_ID}:hover:not(:disabled),
     #${LAUNCHER_ID}[aria-expanded="true"] {
-      background: #5ee77f;
+      background: #d16bff;
     }
 
     #${LAUNCHER_ID}:disabled {
