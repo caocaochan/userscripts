@@ -29,6 +29,20 @@
       ]
     },
     {
+      "id": "iqiyi-subtitle-downloader",
+      "name": "iQIYI Subtitle Downloader",
+      "description": "Adds SRT download buttons for available subtitles on iQ.com episode pages.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/iqiyi-subtitle-downloader.user.js",
+      "tags": [
+        "tampermonkey",
+        "iqiyi",
+        "iq.com",
+        "subtitles",
+        "srt"
+      ]
+    },
+    {
       "id": "plex-open-in-mpv",
       "name": "Plex Open in mpv",
       "description": "Adds Open in mpv controls to local Plex detail pages and Home/library media cards, opening media through the included Windows plex-mpv:// handler.",
