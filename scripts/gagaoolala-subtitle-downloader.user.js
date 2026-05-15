@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GagaOOLala Subtitle Downloader
 // @namespace    https://www.gagaoolala.com/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for GagaOOLala subtitle tracks.
