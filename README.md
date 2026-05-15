@@ -17,4 +17,4 @@ Userscripts in this repo can be installed directly from the raw file URL in a us
   Requires a working `plex-mpv://` protocol handler on the machine. Season pages open an ordered M3U playlist in mpv, and show pages open the first season. A generic Windows handler is included in [`handlers/windows`](handlers/windows), with install notes in [`handlers/windows/README.md`](handlers/windows/README.md) and a registry template at [`handlers/windows/install-plex-mpv-handler.reg`](handlers/windows/install-plex-mpv-handler.reg). Browsers/userscripts cannot launch `mpv.exe` directly without an external protocol handler or helper.
 
 - **iQIYI Subtitle Downloader**
-  Adds a floating subtitles panel to `https://www.iq.com/play/*` episode pages and downloads available subtitle tracks as `.srt` files using IQ.com’s embedded subtitle metadata.
+  Adds a floating subtitles panel to `https://www.iq.com/play/*` and `https://www.iqiyi.com/v_*.html` episode pages and downloads available subtitle tracks as `.srt` files. It uses IQ.com’s embedded Next.js subtitle metadata and iQIYI.com’s runtime player subtitle metadata.

@@ -1,14 +1,17 @@
 // ==UserScript==
 // @name         iQIYI Subtitle Downloader
 // @namespace    https://www.iq.com/
-// @version      0.1.2
+// @version      0.1.3
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
-// @description  Adds SRT download buttons for subtitles on iQ.com episode pages.
+// @description  Adds SRT download buttons for subtitles on iQ.com and iQIYI.com episode pages.
 // @author       CaoCao
 // @match        https://www.iq.com/play/*
 // @match        https://iq.com/play/*
+// @match        https://www.iqiyi.com/v_*.html*
+// @match        https://iqiyi.com/v_*.html*
 // @include      /^https:\/\/(?:www\.)?iq\.com\/play\/.*$/
+// @include      /^https:\/\/(?:www\.)?iqiyi\.com\/v_[^/?#]+\.html(?:[?#].*)?$/
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_download
@@ -17,6 +20,9 @@
 // @connect      meta.video.iqiyi.com
 // @connect      www.iq.com
 // @connect      iq.com
+// @connect      www.iqiyi.com
+// @connect      iqiyi.com
+// @connect      mesh.if.iqiyi.com
 // ==/UserScript==
 
 (() => {
@@ -34,6 +40,11 @@
   const SRT_BASE_URL = "https://meta.video.iqiyi.com";
   const ROUTE_CHECK_INTERVAL_MS = 800;
   const FETCH_STALE_DELAY_MS = 350;
+  const IQIYI_RUNTIME_RETRY_MS = 500;
+  const IQIYI_RUNTIME_MAX_RETRIES = 20;
+  const IQIYI_LANGUAGE_BY_LID = {
+    1: "Simplified Chinese",
+  };
 
   const css = `
     #${PANEL_ID} {
@@ -191,6 +202,10 @@
   let lastState = null;
   let refreshTimer = 0;
   let fallbackFetchTimer = 0;
+  let iqiyiRuntimeRetryTimer = 0;
+  let iqiyiRuntimeRetryCount = 0;
+  let iqiyiMetadataFetchKey = "";
+  const iqiyiMetadataCache = new Map();
   let menuCommandsInstalled = false;
   let hasStarted = false;
   let isPanelOpen = false;
@@ -283,7 +298,7 @@
     if (!state.subtitles.length) {
       const empty = document.createElement("div");
       empty.className = EMPTY_CLASS;
-      empty.textContent = state.status === "error" ? "Could not read IQ.com page data" : state.message || "No subtitles found";
+      empty.textContent = state.status === "error" ? "Could not read iQIYI page data" : state.message || "No subtitles found";
       list.appendChild(empty);
       panel.hidden = !isPanelOpen;
       return;
@@ -420,6 +435,12 @@
   }
 
   function refreshFromDocument() {
+    if (isIqiyiHost()) {
+      refreshFromIqiyiRuntime();
+      return;
+    }
+
+    resetIqiyiRuntimeRetry();
     const state = extractStateFromDocument(document);
     renderState(state);
 
@@ -427,6 +448,33 @@
     if (!isStateHrefCurrent(state.href) || state.source === "missing") {
       fallbackFetchTimer = window.setTimeout(refreshFromFetchedPage, FETCH_STALE_DELAY_MS);
     }
+  }
+
+  function refreshFromIqiyiRuntime() {
+    window.clearTimeout(fallbackFetchTimer);
+
+    const state = extractStateFromIqiyiRuntime(window.location.href);
+    if (state) {
+      resetIqiyiRuntimeRetry();
+      renderState(state);
+      enrichIqiyiMetadata(state);
+      return;
+    }
+
+    if (iqiyiRuntimeRetryCount < IQIYI_RUNTIME_MAX_RETRIES) {
+      iqiyiRuntimeRetryCount += 1;
+      renderState(buildState({}, [], window.location.href, "loading", "Loading subtitles..."));
+      window.clearTimeout(iqiyiRuntimeRetryTimer);
+      iqiyiRuntimeRetryTimer = window.setTimeout(refreshFromIqiyiRuntime, IQIYI_RUNTIME_RETRY_MS);
+      return;
+    }
+
+    renderState(buildState({}, [], window.location.href, "iqiyi-runtime", "No subtitles found"));
+  }
+
+  function resetIqiyiRuntimeRetry() {
+    iqiyiRuntimeRetryCount = 0;
+    window.clearTimeout(iqiyiRuntimeRetryTimer);
   }
 
   async function refreshFromFetchedPage() {
@@ -447,7 +495,7 @@
       renderState(extractStateFromDocument(doc, window.location.href));
     } catch (error) {
       console.warn("[iQIYI Subtitle Downloader]", error);
-      renderState(buildState({}, [], window.location.href, "error", "Could not read IQ.com page data"));
+      renderState(buildState({}, [], window.location.href, "error", "Could not read iQIYI page data"));
     }
   }
 
@@ -479,7 +527,7 @@
   function extractStateFromDocument(doc, href = doc.location?.href || "") {
     const data = parseNextData(doc);
     if (!data) {
-      return buildState({}, [], href, "missing", "Could not read IQ.com page data");
+      return buildState({}, [], href, "missing", "Could not read iQIYI page data");
     }
 
     const pageProps = data?.props?.initialProps?.pageProps || {};
@@ -500,6 +548,84 @@
       "next-data",
       subtitles.length ? `Found ${subtitles.length} subtitle track${subtitles.length === 1 ? "" : "s"}` : "No subtitles found",
     );
+  }
+
+  function extractStateFromIqiyiRuntime(href) {
+    const data = window.QiyiPlayerProphetData;
+    const dashData = data?.dashData?.data;
+    const program = dashData?.program;
+
+    if (!program || !Array.isArray(program.stl)) {
+      return null;
+    }
+
+    const tvid = data.tvId || data.tvid || data.videoInfo?.tvId || data.videoInfo?.tvid;
+    const metadata = tvid ? iqiyiMetadataCache.get(String(tvid)) : null;
+    const videoInfo = data.videoInfo || {};
+    const subtitleBaseUrl = normalizeSubtitleBaseUrl(dashData.dstl || dashData.dm || SRT_BASE_URL);
+    const subtitles = normalizeSubtitles(program.stl, subtitleBaseUrl, getIqiyiSubtitleName);
+    const episodeTitle = metadata?.subt || metadata?.vn || videoInfo.title || videoInfo.name || "";
+    const episodeOrder = parseEpisodeOrder(metadata?.vn) || parseEpisodeOrder(videoInfo.title) || parseEpisodeOrder(episodeTitle);
+
+    return buildState(
+      {
+        albumTitle: metadata?.an || videoInfo.albumName || videoInfo.album?.name || "",
+        episodeTitle,
+        episodeOrder,
+      },
+      subtitles,
+      href,
+      "iqiyi-runtime",
+      subtitles.length ? `Found ${subtitles.length} subtitle track${subtitles.length === 1 ? "" : "s"}` : "No subtitles found",
+    );
+  }
+
+  async function enrichIqiyiMetadata(state) {
+    const data = window.QiyiPlayerProphetData;
+    const tvid = data?.tvId || data?.tvid || data?.videoInfo?.tvId || data?.videoInfo?.tvid;
+    if (!tvid) {
+      return;
+    }
+
+    const key = String(tvid);
+    if (iqiyiMetadataCache.has(key) || iqiyiMetadataFetchKey === key) {
+      return;
+    }
+
+    iqiyiMetadataFetchKey = key;
+
+    try {
+      const response = await fetch(`https://mesh.if.iqiyi.com/player/lw/video/playervideoinfo?id=${encodeURIComponent(key)}&locale=cn_s`, {
+        credentials: "include",
+        headers: {
+          Accept: "application/json,*/*;q=0.8",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Metadata request failed with HTTP ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (!payload?.data) {
+        return;
+      }
+
+      iqiyiMetadataCache.set(key, payload.data);
+
+      if (lastState?.href === state.href && isIqiyiHost()) {
+        const updatedState = extractStateFromIqiyiRuntime(window.location.href);
+        if (updatedState) {
+          renderState(updatedState);
+        }
+      }
+    } catch (error) {
+      console.warn("[iQIYI Subtitle Downloader] Could not fetch iQIYI metadata.", error);
+    } finally {
+      if (iqiyiMetadataFetchKey === key) {
+        iqiyiMetadataFetchKey = "";
+      }
+    }
   }
 
   function resolveDataHref(pageProps, videoInfo, fallbackHref) {
@@ -527,6 +653,16 @@
     }
   }
 
+  function isIqiyiHost(host = window.location.hostname) {
+    return host === "iqiyi.com" || host.endsWith(".iqiyi.com");
+  }
+
+  function parseEpisodeOrder(value) {
+    const text = normalizeText(value);
+    const match = text.match(/(?:Episode|Ep\.?|E|第)\s*([0-9]+)\s*(?:集|话|話)?/i);
+    return match ? numberValue(match[1]) : 0;
+  }
+
   function parseNextData(doc) {
     const script = doc.getElementById("__NEXT_DATA__");
     if (!script?.textContent) {
@@ -541,7 +677,7 @@
     }
   }
 
-  function normalizeSubtitles(entries) {
+  function normalizeSubtitles(entries, baseUrl = SRT_BASE_URL, getSubtitleName = getDefaultSubtitleName) {
     if (!Array.isArray(entries)) {
       return [];
     }
@@ -550,7 +686,7 @@
     return entries
       .filter((entry) => entry && typeof entry.srt === "string" && entry.srt.trim())
       .map((entry) => {
-        const baseName = normalizeText(entry._name || entry.name || `Subtitle ${entry.lid || ""}`) || "Subtitle";
+        const baseName = normalizeText(getSubtitleName(entry)) || "Subtitle";
         const duplicateCount = seenNames.get(baseName) || 0;
         seenNames.set(baseName, duplicateCount + 1);
 
@@ -558,7 +694,7 @@
           name: duplicateCount ? `${baseName} ${duplicateCount + 1}` : baseName,
           sort: numberValue(entry._sort),
           lid: numberValue(entry.lid),
-          url: new URL(entry.srt, SRT_BASE_URL).toString(),
+          url: new URL(entry.srt, baseUrl).toString(),
         };
       })
       .sort((left, right) => (
@@ -566,6 +702,30 @@
         || left.name.localeCompare(right.name)
         || left.lid - right.lid
       ));
+  }
+
+  function getDefaultSubtitleName(entry) {
+    return entry._name || entry.name || `Subtitle ${entry.lid || ""}`;
+  }
+
+  function getIqiyiSubtitleName(entry) {
+    const lid = numberValue(entry.lid);
+    return entry._name || entry.name || IQIYI_LANGUAGE_BY_LID[lid] || `Subtitle ${entry.lid || ""}`;
+  }
+
+  function normalizeSubtitleBaseUrl(value) {
+    const baseUrl = normalizeText(value) || SRT_BASE_URL;
+
+    try {
+      const url = new URL(baseUrl);
+      if (url.hostname === "meta.video.iqiyi.com") {
+        url.protocol = "https:";
+      }
+
+      return url.toString();
+    } catch {
+      return SRT_BASE_URL;
+    }
   }
 
   function buildState(videoInfo, subtitles, href, source, message = "") {
@@ -723,7 +883,10 @@
   function logDebugInfo() {
     const debugInfo = {
       href: window.location.href,
+      host: window.location.host,
+      source: lastState?.source || "",
       hasNextData: Boolean(document.getElementById("__NEXT_DATA__")),
+      hasQiyiPlayerProphetData: Boolean(window.QiyiPlayerProphetData),
       subtitleCount: lastState?.subtitles?.length || 0,
       albumTitle: lastState?.albumTitle || "",
       episodeTitle: lastState?.episodeTitle || "",
