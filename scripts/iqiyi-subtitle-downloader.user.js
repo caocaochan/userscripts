@@ -1,17 +1,22 @@
 // ==UserScript==
 // @name         iQIYI Subtitle Downloader
 // @namespace    https://www.iq.com/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for subtitles on iQ.com episode pages.
 // @author       CaoCao
 // @match        https://www.iq.com/play/*
+// @match        https://iq.com/play/*
+// @include      /^https:\/\/(?:www\.)?iq\.com\/play\/.*$/
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_download
 // @grant        GM_xmlhttpRequest
+// @grant        GM_registerMenuCommand
 // @connect      meta.video.iqiyi.com
+// @connect      www.iq.com
+// @connect      iq.com
 // ==/UserScript==
 
 (() => {
@@ -24,6 +29,7 @@
   const EMPTY_CLASS = "iqiyi-subtitle-downloader-empty";
   const BUTTON_CLASS = "iqiyi-subtitle-downloader-button";
   const TITLE_CLASS = "iqiyi-subtitle-downloader-title";
+  const STATUS_CLASS = "iqiyi-subtitle-downloader-status";
   const SRT_BASE_URL = "https://meta.video.iqiyi.com";
   const ROUTE_CHECK_INTERVAL_MS = 800;
   const FETCH_STALE_DELAY_MS = 350;
@@ -63,6 +69,12 @@
       overflow: auto;
       padding-right: 2px;
       scrollbar-width: thin;
+    }
+
+    #${PANEL_ID} .${STATUS_CLASS} {
+      margin: -4px 0 10px;
+      color: rgba(244, 247, 251, 0.64);
+      font-size: 12px;
     }
 
     #${PANEL_ID} .${ROW_CLASS} {
@@ -135,8 +147,13 @@
   let toastTimer = 0;
   let lastHref = "";
   let lastSignature = "";
+  let lastState = null;
   let refreshTimer = 0;
   let fallbackFetchTimer = 0;
+  let menuCommandsInstalled = false;
+  let hasStarted = false;
+
+  console.info("[iQIYI Subtitle Downloader] started", window.location.href);
 
   function addStyle() {
     if (typeof GM_addStyle === "function") {
@@ -146,7 +163,11 @@
 
     const style = document.createElement("style");
     style.textContent = css;
-    document.documentElement.appendChild(style);
+    getMountRoot().appendChild(style);
+  }
+
+  function getMountRoot() {
+    return document.body || document.documentElement;
   }
 
   function ensurePanel() {
@@ -159,7 +180,7 @@
     panel.setAttribute("aria-label", "iQIYI subtitle downloads");
 
     if (!panel.parentElement) {
-      document.documentElement.appendChild(panel);
+      getMountRoot().appendChild(panel);
     }
 
     return panel;
@@ -179,10 +200,17 @@
     list.className = LIST_CLASS;
     panel.appendChild(list);
 
+    if (state.message) {
+      const status = document.createElement("div");
+      status.className = STATUS_CLASS;
+      status.textContent = state.message;
+      panel.insertBefore(status, list);
+    }
+
     if (!state.subtitles.length) {
       const empty = document.createElement("div");
       empty.className = EMPTY_CLASS;
-      empty.textContent = "No subtitles found";
+      empty.textContent = state.status === "error" ? "Could not read IQ.com page data" : state.message || "No subtitles found";
       list.appendChild(empty);
       return;
     }
@@ -297,7 +325,7 @@
     link.href = objectUrl;
     link.download = filename;
     link.style.display = "none";
-    document.documentElement.appendChild(link);
+    getMountRoot().appendChild(link);
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
@@ -309,7 +337,7 @@
     const toast = document.createElement("div");
     toast.className = TOAST_CLASS;
     toast.textContent = message;
-    document.documentElement.appendChild(toast);
+    getMountRoot().appendChild(toast);
 
     window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => toast.remove(), 2200);
@@ -343,12 +371,16 @@
       renderState(extractStateFromDocument(doc, window.location.href));
     } catch (error) {
       console.warn("[iQIYI Subtitle Downloader]", error);
+      renderState(buildState({}, [], window.location.href, "error", "Could not read IQ.com page data"));
     }
   }
 
   function renderState(state) {
+    lastState = state;
     const signature = JSON.stringify({
       href: state.href,
+      status: state.status,
+      message: state.message,
       albumTitle: state.albumTitle,
       episodeTitle: state.episodeTitle,
       episodeOrder: state.episodeOrder,
@@ -366,7 +398,7 @@
   function extractStateFromDocument(doc, href = doc.location?.href || "") {
     const data = parseNextData(doc);
     if (!data) {
-      return buildState({}, [], href, "missing");
+      return buildState({}, [], href, "missing", "Could not read IQ.com page data");
     }
 
     const pageProps = data?.props?.initialProps?.pageProps || {};
@@ -385,6 +417,7 @@
       subtitles,
       dataHref,
       "next-data",
+      subtitles.length ? `Found ${subtitles.length} subtitle track${subtitles.length === 1 ? "" : "s"}` : "No subtitles found",
     );
   }
 
@@ -454,10 +487,12 @@
       ));
   }
 
-  function buildState(videoInfo, subtitles, href, source) {
+  function buildState(videoInfo, subtitles, href, source, message = "") {
     const titleFallback = getTitleFallback();
     return {
       source,
+      status: source === "missing" || source === "error" ? "error" : subtitles.length ? "ready" : "empty",
+      message,
       href,
       albumTitle: normalizeTitle(videoInfo.albumTitle) || titleFallback.albumTitle,
       episodeTitle: normalizeTitle(videoInfo.episodeTitle) || titleFallback.episodeTitle,
@@ -540,6 +575,45 @@
     }, ROUTE_CHECK_INTERVAL_MS);
   }
 
+  function installMenuCommands() {
+    if (menuCommandsInstalled || typeof GM_registerMenuCommand !== "function") {
+      return;
+    }
+
+    menuCommandsInstalled = true;
+    GM_registerMenuCommand("Refresh subtitle panel", () => {
+      showLoadingPanel();
+      refreshFromDocument();
+    });
+    GM_registerMenuCommand("Log subtitle debug info", logDebugInfo);
+  }
+
+  function logDebugInfo() {
+    const debugInfo = {
+      href: window.location.href,
+      hasNextData: Boolean(document.getElementById("__NEXT_DATA__")),
+      subtitleCount: lastState?.subtitles?.length || 0,
+      albumTitle: lastState?.albumTitle || "",
+      episodeTitle: lastState?.episodeTitle || "",
+      panelConnected: Boolean(panel?.isConnected),
+    };
+
+    console.info("[iQIYI Subtitle Downloader] debug", debugInfo);
+    return debugInfo;
+  }
+
+  function installDebugHandle() {
+    window.iqiyiSubtitleDownloaderDebug = {
+      refresh: refreshFromDocument,
+      getState: () => lastState,
+      log: logDebugInfo,
+    };
+  }
+
+  function showLoadingPanel() {
+    renderState(buildState({}, [], window.location.href, "loading", "Loading subtitles..."));
+  }
+
   function normalizeTitle(value) {
     return normalizeText(value)
       .replace(/\uFF1F/g, "?")
@@ -566,8 +640,21 @@
   }
 
   function start() {
+    if (hasStarted) {
+      return;
+    }
+
+    if (!document.body) {
+      window.setTimeout(start, 50);
+      return;
+    }
+
+    hasStarted = true;
     addStyle();
     ensurePanel();
+    installMenuCommands();
+    installDebugHandle();
+    showLoadingPanel();
     lastHref = window.location.href;
     refreshFromDocument();
     observeNavigation();
