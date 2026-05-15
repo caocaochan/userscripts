@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GagaOOLala Subtitle Downloader
 // @namespace    https://www.gagaoolala.com/
-// @version      0.1.1
+// @version      0.1.2
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for GagaOOLala subtitle tracks.
@@ -61,11 +61,11 @@
       max-height: calc(100dvh - 106px);
       padding: 16px;
       overflow: hidden;
-      color: #f4f7fb;
-      background: rgba(20, 23, 30, 0.94);
-      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #f8f0ff;
+      background: rgba(31, 18, 42, 0.95);
+      border: 1px solid rgba(185, 64, 255, 0.34);
       border-radius: 8px;
-      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+      box-shadow: 0 18px 48px rgba(28, 8, 42, 0.54);
       font: 14px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       backdrop-filter: blur(10px);
     }
@@ -84,7 +84,7 @@
 
     #${PANEL_ID} .${STATUS_CLASS} {
       margin: -4px 0 10px;
-      color: rgba(244, 247, 251, 0.64);
+      color: rgba(235, 212, 255, 0.72);
       font-size: 12px;
     }
 
@@ -105,7 +105,7 @@
       align-items: center;
       gap: 12px;
       min-height: 30px;
-      color: rgba(244, 247, 251, 0.86);
+      color: rgba(248, 240, 255, 0.9);
     }
 
     #${PANEL_ID} .${ROW_CLASS} span {
@@ -116,7 +116,7 @@
     }
 
     #${PANEL_ID} .${EMPTY_CLASS} {
-      color: rgba(244, 247, 251, 0.64);
+      color: rgba(235, 212, 255, 0.72);
       font-size: 13px;
     }
 
