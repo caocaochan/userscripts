@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         iQIYI Subtitle Downloader
 // @namespace    https://www.iq.com/
-// @version      0.1.1
+// @version      0.1.2
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for subtitles on iQ.com episode pages.
@@ -23,6 +23,7 @@
   "use strict";
 
   const PANEL_ID = "iqiyi-subtitle-downloader-panel";
+  const LAUNCHER_ID = "iqiyi-subtitle-downloader-launcher";
   const TOAST_CLASS = "iqiyi-subtitle-downloader-toast";
   const LIST_CLASS = "iqiyi-subtitle-downloader-list";
   const ROW_CLASS = "iqiyi-subtitle-downloader-row";
@@ -38,11 +39,12 @@
     #${PANEL_ID} {
       position: fixed;
       right: 24px;
-      bottom: 72px;
+      bottom: 82px;
       z-index: 2147483647;
       box-sizing: border-box;
-      width: min(340px, calc(100vw - 32px));
-      max-height: min(58vh, 520px);
+      width: min(360px, calc(100vw - 32px));
+      max-height: calc(100vh - 106px);
+      max-height: calc(100dvh - 106px);
       padding: 16px;
       overflow: hidden;
       color: #f4f7fb;
@@ -52,6 +54,10 @@
       box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
       font: 14px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       backdrop-filter: blur(10px);
+    }
+
+    #${PANEL_ID}[hidden] {
+      display: none !important;
     }
 
     #${PANEL_ID} .${TITLE_CLASS} {
@@ -65,8 +71,10 @@
     #${PANEL_ID} .${LIST_CLASS} {
       display: grid;
       gap: 6px;
-      max-height: calc(min(58vh, 520px) - 58px);
-      overflow: auto;
+      max-height: calc(100vh - 190px);
+      max-height: calc(100dvh - 190px);
+      min-height: 0;
+      overflow-y: auto;
       padding-right: 2px;
       scrollbar-width: thin;
     }
@@ -124,6 +132,38 @@
       opacity: 0.66;
     }
 
+    #${LAUNCHER_ID} {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 2147483647;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 58px;
+      height: 42px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 8px;
+      color: #07150b;
+      background: #36d661;
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+      font: 800 14px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    #${LAUNCHER_ID}:hover:not(:disabled),
+    #${LAUNCHER_ID}[aria-expanded="true"] {
+      background: #5ee77f;
+    }
+
+    #${LAUNCHER_ID}:disabled {
+      cursor: wait;
+      opacity: 0.68;
+    }
+
     .${TOAST_CLASS} {
       position: fixed;
       left: 50%;
@@ -143,6 +183,7 @@
     }
   `;
 
+  let launcher = null;
   let panel = null;
   let toastTimer = 0;
   let lastHref = "";
@@ -152,6 +193,7 @@
   let fallbackFetchTimer = 0;
   let menuCommandsInstalled = false;
   let hasStarted = false;
+  let isPanelOpen = false;
 
   console.info("[iQIYI Subtitle Downloader] started", window.location.href);
 
@@ -170,6 +212,26 @@
     return document.body || document.documentElement;
   }
 
+  function ensureLauncher() {
+    if (launcher && launcher.isConnected) {
+      return launcher;
+    }
+
+    launcher = document.getElementById(LAUNCHER_ID) || document.createElement("button");
+    launcher.id = LAUNCHER_ID;
+    launcher.type = "button";
+    launcher.textContent = "SRT";
+    launcher.setAttribute("aria-controls", PANEL_ID);
+    launcher.setAttribute("aria-expanded", "false");
+    launcher.addEventListener("click", togglePanel);
+
+    if (!launcher.parentElement) {
+      getMountRoot().appendChild(launcher);
+    }
+
+    return launcher;
+  }
+
   function ensurePanel() {
     if (panel && panel.isConnected) {
       return panel;
@@ -184,6 +246,17 @@
     }
 
     return panel;
+  }
+
+  function renderLauncher(state) {
+    ensureLauncher();
+
+    const count = state.subtitles.length;
+    const label = count > 0 ? `Show ${count} subtitle download${count === 1 ? "" : "s"}` : "Show subtitle status";
+    launcher.title = label;
+    launcher.setAttribute("aria-label", label);
+    launcher.setAttribute("aria-expanded", isPanelOpen ? "true" : "false");
+    launcher.disabled = state.source === "loading";
   }
 
   function renderPanel(state) {
@@ -212,6 +285,7 @@
       empty.className = EMPTY_CLASS;
       empty.textContent = state.status === "error" ? "Could not read IQ.com page data" : state.message || "No subtitles found";
       list.appendChild(empty);
+      panel.hidden = !isPanelOpen;
       return;
     }
 
@@ -234,6 +308,8 @@
       row.append(label, button);
       list.appendChild(row);
     }
+
+    panel.hidden = !isPanelOpen;
   }
 
   async function onDownloadClick(button, state, subtitle) {
@@ -388,10 +464,15 @@
     });
 
     if (signature === lastSignature) {
+      renderLauncher(state);
+      if (panel) {
+        panel.hidden = !isPanelOpen;
+      }
       return;
     }
 
     lastSignature = signature;
+    renderLauncher(state);
     renderPanel(state);
   }
 
@@ -549,6 +630,8 @@
   function observeNavigation() {
     window.addEventListener("popstate", () => scheduleRefresh(0), { passive: true });
     window.addEventListener("hashchange", () => scheduleRefresh(0), { passive: true });
+    document.addEventListener("pointerdown", onDocumentPointerDown, true);
+    document.addEventListener("keydown", onDocumentKeyDown, true);
 
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
@@ -575,6 +658,55 @@
     }, ROUTE_CHECK_INTERVAL_MS);
   }
 
+  function togglePanel() {
+    if (isPanelOpen) {
+      hidePanel();
+      return;
+    }
+
+    showPanel();
+  }
+
+  function showPanel() {
+    isPanelOpen = true;
+    ensurePanel();
+    renderLauncher(lastState || buildState({}, [], window.location.href, "loading", "Loading subtitles..."));
+    renderPanel(lastState || buildState({}, [], window.location.href, "loading", "Loading subtitles..."));
+    panel.hidden = false;
+  }
+
+  function hidePanel() {
+    isPanelOpen = false;
+    if (panel) {
+      panel.hidden = true;
+    }
+
+    if (launcher) {
+      launcher.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function onDocumentPointerDown(event) {
+    if (!isPanelOpen) {
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof Node && ((panel && panel.contains(target)) || (launcher && launcher.contains(target)))) {
+      return;
+    }
+
+    hidePanel();
+  }
+
+  function onDocumentKeyDown(event) {
+    if (event.key !== "Escape" || !isPanelOpen) {
+      return;
+    }
+
+    hidePanel();
+  }
+
   function installMenuCommands() {
     if (menuCommandsInstalled || typeof GM_registerMenuCommand !== "function") {
       return;
@@ -582,8 +714,8 @@
 
     menuCommandsInstalled = true;
     GM_registerMenuCommand("Refresh subtitle panel", () => {
-      showLoadingPanel();
       refreshFromDocument();
+      showPanel();
     });
     GM_registerMenuCommand("Log subtitle debug info", logDebugInfo);
   }
@@ -595,7 +727,10 @@
       subtitleCount: lastState?.subtitles?.length || 0,
       albumTitle: lastState?.albumTitle || "",
       episodeTitle: lastState?.episodeTitle || "",
+      launcherConnected: Boolean(launcher?.isConnected),
       panelConnected: Boolean(panel?.isConnected),
+      panelOpen: isPanelOpen,
+      panelHidden: Boolean(panel?.hidden),
     };
 
     console.info("[iQIYI Subtitle Downloader] debug", debugInfo);
@@ -607,6 +742,9 @@
       refresh: refreshFromDocument,
       getState: () => lastState,
       log: logDebugInfo,
+      show: showPanel,
+      hide: hidePanel,
+      toggle: togglePanel,
     };
   }
 
@@ -651,7 +789,9 @@
 
     hasStarted = true;
     addStyle();
+    ensureLauncher();
     ensurePanel();
+    hidePanel();
     installMenuCommands();
     installDebugHandle();
     showLoadingPanel();
