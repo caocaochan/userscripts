@@ -29,6 +29,19 @@
       ]
     },
     {
+      "id": "gagaoolala-subtitle-downloader",
+      "name": "GagaOOLala Subtitle Downloader",
+      "description": "Adds SRT download buttons for available GagaOOLala subtitle tracks.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/gagaoolala-subtitle-downloader.user.js",
+      "tags": [
+        "tampermonkey",
+        "gagaoolala",
+        "subtitles",
+        "srt"
+      ]
+    },
+    {
       "id": "iqiyi-subtitle-downloader",
       "name": "iQIYI Subtitle Downloader",
       "description": "Adds SRT download buttons for available subtitles on iQ.com and iQIYI.com episode pages.",
