@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nyaa Group Hider + Highlighter
 // @namespace    https://nyaa.si/
-// @version      0.2.0
+// @version      0.2.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @description  Hide or highlight Nyaa torrent rows from configured release groups.
@@ -50,44 +50,51 @@
       display: none !important;
     }
 
+    .${HIGHLIGHTED_CLASS} {
+      outline: 2px solid rgba(51, 122, 183, 0.98);
+      outline-offset: -2px;
+    }
+
     .${HIGHLIGHTED_CLASS} > td {
-      box-shadow:
-        inset 0 2px 0 rgba(217, 83, 79, 0.95),
-        inset 0 -2px 0 rgba(217, 83, 79, 0.95);
+      position: relative;
     }
 
-    .${HIGHLIGHTED_CLASS} > td:first-child {
-      box-shadow:
-        inset 3px 0 0 rgba(217, 83, 79, 0.95),
-        inset 0 2px 0 rgba(217, 83, 79, 0.95),
-        inset 0 -2px 0 rgba(217, 83, 79, 0.95);
+    .${HIGHLIGHTED_CLASS} > td::after {
+      content: "";
+      position: absolute;
+      z-index: 2;
+      top: -1px;
+      right: -1px;
+      bottom: -1px;
+      left: -1px;
+      border-top: 2px solid rgba(51, 122, 183, 0.98);
+      border-bottom: 2px solid rgba(51, 122, 183, 0.98);
+      pointer-events: none;
     }
 
-    .${HIGHLIGHTED_CLASS} > td:last-child {
-      box-shadow:
-        inset -3px 0 0 rgba(217, 83, 79, 0.95),
-        inset 0 2px 0 rgba(217, 83, 79, 0.95),
-        inset 0 -2px 0 rgba(217, 83, 79, 0.95);
+    .${HIGHLIGHTED_CLASS} > td:first-child::after {
+      border-left: 3px solid rgba(51, 122, 183, 0.98);
     }
 
-    body.dark .${HIGHLIGHTED_CLASS} > td {
-      box-shadow:
-        inset 0 2px 0 rgba(255, 166, 158, 0.95),
-        inset 0 -2px 0 rgba(255, 166, 158, 0.95);
+    .${HIGHLIGHTED_CLASS} > td:last-child::after {
+      border-right: 3px solid rgba(51, 122, 183, 0.98);
     }
 
-    body.dark .${HIGHLIGHTED_CLASS} > td:first-child {
-      box-shadow:
-        inset 3px 0 0 rgba(255, 166, 158, 0.95),
-        inset 0 2px 0 rgba(255, 166, 158, 0.95),
-        inset 0 -2px 0 rgba(255, 166, 158, 0.95);
+    body.dark .${HIGHLIGHTED_CLASS} {
+      outline-color: rgba(91, 192, 222, 0.98);
     }
 
-    body.dark .${HIGHLIGHTED_CLASS} > td:last-child {
-      box-shadow:
-        inset -3px 0 0 rgba(255, 166, 158, 0.95),
-        inset 0 2px 0 rgba(255, 166, 158, 0.95),
-        inset 0 -2px 0 rgba(255, 166, 158, 0.95);
+    body.dark .${HIGHLIGHTED_CLASS} > td::after {
+      border-top-color: rgba(91, 192, 222, 0.98);
+      border-bottom-color: rgba(91, 192, 222, 0.98);
+    }
+
+    body.dark .${HIGHLIGHTED_CLASS} > td:first-child::after {
+      border-left-color: rgba(91, 192, 222, 0.98);
+    }
+
+    body.dark .${HIGHLIGHTED_CLASS} > td:last-child::after {
+      border-right-color: rgba(91, 192, 222, 0.98);
     }
 
     #${CONTROLS_ID} {
@@ -114,9 +121,9 @@
 
     #${HIGHLIGHTED_BADGE_ID},
     #${HIGHLIGHTED_ADD_BUTTON_ID} {
-      color: #7b2d2a;
-      background: rgba(252, 232, 231, 0.94);
-      border-color: rgba(217, 83, 79, 0.4);
+      color: #23527c;
+      background: rgba(217, 237, 247, 0.94);
+      border-color: rgba(51, 122, 183, 0.4);
     }
 
     #${HIDDEN_BADGE_ID},
@@ -151,8 +158,8 @@
 
     #${HIGHLIGHTED_BADGE_ID}:hover,
     #${HIGHLIGHTED_ADD_BUTTON_ID}:hover {
-      background: rgba(248, 217, 215, 0.98);
-      border-color: rgba(217, 83, 79, 0.62);
+      background: rgba(198, 230, 248, 0.98);
+      border-color: rgba(51, 122, 183, 0.62);
     }
 
     #${HIDDEN_BADGE_ID}:focus-visible,
@@ -178,9 +185,9 @@
 
     body.dark #${HIGHLIGHTED_BADGE_ID},
     body.dark #${HIGHLIGHTED_ADD_BUTTON_ID} {
-      color: #ffe4e1;
-      background: rgba(126, 45, 42, 0.76);
-      border-color: rgba(255, 228, 225, 0.32);
+      color: #d9edf7;
+      background: rgba(35, 82, 124, 0.72);
+      border-color: rgba(217, 237, 247, 0.26);
     }
 
     #${CONTROLS_ID}[hidden] {
