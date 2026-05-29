@@ -45,15 +45,16 @@
     },
     {
       "id": "nyaa-group-hider",
-      "name": "Nyaa Group Hider",
-      "description": "Hides Nyaa torrent rows from configured release groups.",
+      "name": "Nyaa Group Hider + Highlighter",
+      "description": "Hides or highlights Nyaa torrent rows from configured release groups.",
       "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js",
       "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/nyaa-group-hider.user.js",
       "tags": [
         "tampermonkey",
         "nyaa",
         "torrent",
-        "filter"
+        "filter",
+        "highlight"
       ]
     },
     {

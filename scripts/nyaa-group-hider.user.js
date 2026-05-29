@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         Nyaa Group Hider
+// @name         Nyaa Group Hider + Highlighter
 // @namespace    https://nyaa.si/
-// @version      0.1.1
+// @version      0.2.0
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
-// @description  Hide Nyaa torrent rows from configured release groups.
+// @description  Hide or highlight Nyaa torrent rows from configured release groups.
 // @author       CaoCao
 // @match        https://nyaa.si/*
 // @run-at       document-idle
@@ -22,17 +22,27 @@
     // "Erai-raws",
   ];
 
-  const STORAGE_KEY = "nyaa-group-hider-hidden-groups";
+  const DEFAULT_HIGHLIGHTED_GROUPS = [
+    // "SubsPlease",
+  ];
+
+  const HIDDEN_STORAGE_KEY = "nyaa-group-hider-hidden-groups";
+  const HIGHLIGHTED_STORAGE_KEY = "nyaa-group-hider-highlighted-groups";
   const ROW_SELECTOR = "table.torrent-list tbody tr";
   const TITLE_LINK_SELECTOR = 'a[href^="/view/"]:not(.comments)';
   const HIDDEN_CLASS = "nyaa-group-hider-hidden";
+  const HIGHLIGHTED_CLASS = "nyaa-group-hider-highlighted";
   const CONTROLS_ID = "nyaa-group-hider-controls";
-  const BADGE_ID = "nyaa-group-hider-status";
-  const ADD_BUTTON_ID = "nyaa-group-hider-add";
+  const HIDDEN_BADGE_ID = "nyaa-group-hider-hidden-status";
+  const HIGHLIGHTED_BADGE_ID = "nyaa-group-hider-highlighted-status";
+  const HIDDEN_ADD_BUTTON_ID = "nyaa-group-hider-hidden-add";
+  const HIGHLIGHTED_ADD_BUTTON_ID = "nyaa-group-hider-highlighted-add";
   const STYLE_ID = "nyaa-group-hider-style";
 
-  let hiddenGroups = normalizeGroups(readStoredGroups());
+  let hiddenGroups = normalizeGroups(readStoredGroups(HIDDEN_STORAGE_KEY, DEFAULT_HIDDEN_GROUPS));
+  let highlightedGroups = normalizeGroups(readStoredGroups(HIGHLIGHTED_STORAGE_KEY, DEFAULT_HIGHLIGHTED_GROUPS));
   let hiddenCount = 0;
+  let highlightedCount = 0;
   let showHiddenRows = false;
 
   const css = `
@@ -40,16 +50,59 @@
       display: none !important;
     }
 
+    .${HIGHLIGHTED_CLASS} > td {
+      box-shadow:
+        inset 0 2px 0 rgba(217, 83, 79, 0.95),
+        inset 0 -2px 0 rgba(217, 83, 79, 0.95);
+    }
+
+    .${HIGHLIGHTED_CLASS} > td:first-child {
+      box-shadow:
+        inset 3px 0 0 rgba(217, 83, 79, 0.95),
+        inset 0 2px 0 rgba(217, 83, 79, 0.95),
+        inset 0 -2px 0 rgba(217, 83, 79, 0.95);
+    }
+
+    .${HIGHLIGHTED_CLASS} > td:last-child {
+      box-shadow:
+        inset -3px 0 0 rgba(217, 83, 79, 0.95),
+        inset 0 2px 0 rgba(217, 83, 79, 0.95),
+        inset 0 -2px 0 rgba(217, 83, 79, 0.95);
+    }
+
+    body.dark .${HIGHLIGHTED_CLASS} > td {
+      box-shadow:
+        inset 0 2px 0 rgba(255, 166, 158, 0.95),
+        inset 0 -2px 0 rgba(255, 166, 158, 0.95);
+    }
+
+    body.dark .${HIGHLIGHTED_CLASS} > td:first-child {
+      box-shadow:
+        inset 3px 0 0 rgba(255, 166, 158, 0.95),
+        inset 0 2px 0 rgba(255, 166, 158, 0.95),
+        inset 0 -2px 0 rgba(255, 166, 158, 0.95);
+    }
+
+    body.dark .${HIGHLIGHTED_CLASS} > td:last-child {
+      box-shadow:
+        inset -3px 0 0 rgba(255, 166, 158, 0.95),
+        inset 0 2px 0 rgba(255, 166, 158, 0.95),
+        inset 0 -2px 0 rgba(255, 166, 158, 0.95);
+    }
+
     #${CONTROLS_ID} {
       display: inline-flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 6px;
       margin: 0 0 8px;
       font: 12px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    #${BADGE_ID},
-    #${ADD_BUTTON_ID} {
+    #${HIDDEN_BADGE_ID},
+    #${HIGHLIGHTED_BADGE_ID},
+    #${HIDDEN_ADD_BUTTON_ID},
+    #${HIGHLIGHTED_ADD_BUTTON_ID} {
       min-height: 26px;
       border: 1px solid rgba(51, 122, 183, 0.35);
       border-radius: 4px;
@@ -59,18 +112,27 @@
       touch-action: manipulation;
     }
 
-    #${BADGE_ID} {
+    #${HIGHLIGHTED_BADGE_ID},
+    #${HIGHLIGHTED_ADD_BUTTON_ID} {
+      color: #7b2d2a;
+      background: rgba(252, 232, 231, 0.94);
+      border-color: rgba(217, 83, 79, 0.4);
+    }
+
+    #${HIDDEN_BADGE_ID},
+    #${HIGHLIGHTED_BADGE_ID} {
       padding: 4px 8px;
     }
 
-    #${BADGE_ID}[aria-pressed="true"] {
+    #${HIDDEN_BADGE_ID}[aria-pressed="true"] {
       color: #1b4f72;
       background: rgba(232, 245, 255, 0.98);
       border-color: rgba(51, 122, 183, 0.58);
       box-shadow: inset 0 0 0 1px rgba(51, 122, 183, 0.12);
     }
 
-    #${ADD_BUTTON_ID} {
+    #${HIDDEN_ADD_BUTTON_ID},
+    #${HIGHLIGHTED_ADD_BUTTON_ID} {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -81,34 +143,44 @@
       line-height: 1;
     }
 
-    #${BADGE_ID}:hover,
-    #${ADD_BUTTON_ID}:hover {
+    #${HIDDEN_BADGE_ID}:hover,
+    #${HIDDEN_ADD_BUTTON_ID}:hover {
       background: rgba(198, 230, 248, 0.98);
       border-color: rgba(51, 122, 183, 0.6);
     }
 
-    #${BADGE_ID}:focus-visible,
-    #${ADD_BUTTON_ID}:focus-visible {
+    #${HIGHLIGHTED_BADGE_ID}:hover,
+    #${HIGHLIGHTED_ADD_BUTTON_ID}:hover {
+      background: rgba(248, 217, 215, 0.98);
+      border-color: rgba(217, 83, 79, 0.62);
+    }
+
+    #${HIDDEN_BADGE_ID}:focus-visible,
+    #${HIGHLIGHTED_BADGE_ID}:focus-visible,
+    #${HIDDEN_ADD_BUTTON_ID}:focus-visible,
+    #${HIGHLIGHTED_ADD_BUTTON_ID}:focus-visible {
       outline: 2px solid rgba(51, 122, 183, 0.62);
       outline-offset: 2px;
     }
 
-    body.dark #${BADGE_ID} {
+    body.dark #${HIDDEN_BADGE_ID},
+    body.dark #${HIDDEN_ADD_BUTTON_ID} {
       color: #d9edf7;
       background: rgba(35, 82, 124, 0.72);
       border-color: rgba(217, 237, 247, 0.26);
     }
 
-    body.dark #${BADGE_ID}[aria-pressed="true"] {
+    body.dark #${HIDDEN_BADGE_ID}[aria-pressed="true"] {
       color: #fff;
       background: rgba(51, 122, 183, 0.86);
       border-color: rgba(217, 237, 247, 0.48);
     }
 
-    body.dark #${ADD_BUTTON_ID} {
-      color: #d9edf7;
-      background: rgba(35, 82, 124, 0.72);
-      border-color: rgba(217, 237, 247, 0.26);
+    body.dark #${HIGHLIGHTED_BADGE_ID},
+    body.dark #${HIGHLIGHTED_ADD_BUTTON_ID} {
+      color: #ffe4e1;
+      background: rgba(126, 45, 42, 0.76);
+      border-color: rgba(255, 228, 225, 0.32);
     }
 
     #${CONTROLS_ID}[hidden] {
@@ -116,19 +188,19 @@
     }
   `;
 
-  function readStoredGroups() {
-    const fallbackGroups = DEFAULT_HIDDEN_GROUPS.slice();
+  function readStoredGroups(storageKey, defaultGroups) {
+    const fallbackGroups = defaultGroups.slice();
 
     try {
       if (typeof GM_getValue === "function") {
-        return GM_getValue(STORAGE_KEY, fallbackGroups);
+        return GM_getValue(storageKey, fallbackGroups);
       }
     } catch (error) {
       console.warn("[Nyaa Group Hider]", error);
     }
 
     try {
-      const rawValue = window.localStorage.getItem(STORAGE_KEY);
+      const rawValue = window.localStorage.getItem(storageKey);
       return rawValue ? JSON.parse(rawValue) : fallbackGroups;
     } catch (error) {
       console.warn("[Nyaa Group Hider]", error);
@@ -136,26 +208,34 @@
     }
   }
 
-  function writeStoredGroups(groups) {
+  function writeStoredGroups(storageKey, groups) {
     const nextGroups = normalizeGroups(groups);
 
     try {
       if (typeof GM_setValue === "function") {
-        GM_setValue(STORAGE_KEY, nextGroups);
+        GM_setValue(storageKey, nextGroups);
       } else {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextGroups));
+        window.localStorage.setItem(storageKey, JSON.stringify(nextGroups));
       }
     } catch (error) {
       console.warn("[Nyaa Group Hider]", error);
 
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextGroups));
+        window.localStorage.setItem(storageKey, JSON.stringify(nextGroups));
       } catch (storageError) {
         console.warn("[Nyaa Group Hider]", storageError);
       }
     }
 
-    hiddenGroups = nextGroups;
+    return nextGroups;
+  }
+
+  function setHiddenGroups(groups) {
+    hiddenGroups = writeStoredGroups(HIDDEN_STORAGE_KEY, groups);
+  }
+
+  function setHighlightedGroups(groups) {
+    highlightedGroups = writeStoredGroups(HIGHLIGHTED_STORAGE_KEY, groups);
   }
 
   function normalizeGroups(groups) {
@@ -168,7 +248,7 @@
 
     for (const group of groups) {
       const normalizedGroup = String(group || "").trim();
-      const key = normalizedGroup.toLocaleLowerCase();
+      const key = groupKey(normalizedGroup);
 
       if (!normalizedGroup || seenGroups.has(key)) {
         continue;
@@ -189,8 +269,8 @@
     return String(groupName || "").trim().toLocaleLowerCase();
   }
 
-  function getHiddenGroupKeys() {
-    return new Set(hiddenGroups.map(groupKey));
+  function getGroupKeys(groups) {
+    return new Set(groups.map(groupKey));
   }
 
   function getTitleLink(row) {
@@ -207,19 +287,28 @@
     return match ? match[1].trim() : "";
   }
 
-  function applyHiddenGroups() {
-    const hiddenGroupKeys = getHiddenGroupKeys();
+  function applyGroupRules() {
+    const hiddenGroupKeys = getGroupKeys(hiddenGroups);
+    const highlightedGroupKeys = getGroupKeys(highlightedGroups);
     hiddenCount = 0;
+    highlightedCount = 0;
 
     for (const row of document.querySelectorAll(ROW_SELECTOR)) {
       const titleLink = getTitleLink(row);
       const groupName = titleLink ? getLeadingGroup(titleLink.textContent) : "";
-      const isHiddenGroup = Boolean(groupName && hiddenGroupKeys.has(groupKey(groupName)));
+      const key = groupKey(groupName);
+      const isHiddenGroup = Boolean(groupName && hiddenGroupKeys.has(key));
+      const isHighlightedGroup = Boolean(groupName && highlightedGroupKeys.has(key));
 
       row.classList.toggle(HIDDEN_CLASS, isHiddenGroup && !showHiddenRows);
+      row.classList.toggle(HIGHLIGHTED_CLASS, isHighlightedGroup);
 
       if (isHiddenGroup) {
         hiddenCount += 1;
+      }
+
+      if (isHighlightedGroup) {
+        highlightedCount += 1;
       }
     }
 
@@ -240,65 +329,123 @@
     controls = document.createElement("div");
     controls.id = CONTROLS_ID;
 
-    const badge = document.createElement("button");
-    badge.id = BADGE_ID;
-    badge.type = "button";
-    badge.addEventListener("click", () => {
+    const hiddenBadge = document.createElement("button");
+    hiddenBadge.id = HIDDEN_BADGE_ID;
+    hiddenBadge.type = "button";
+    hiddenBadge.addEventListener("click", () => {
       showHiddenRows = !showHiddenRows;
-      applyHiddenGroups();
+      applyGroupRules();
     });
 
-    const addButton = document.createElement("button");
-    addButton.id = ADD_BUTTON_ID;
-    addButton.type = "button";
-    addButton.textContent = "+";
-    addButton.setAttribute("aria-label", "Add hidden group");
-    addButton.title = "Add hidden group";
-    addButton.addEventListener("click", promptForNewGroups);
+    const hiddenAddButton = document.createElement("button");
+    hiddenAddButton.id = HIDDEN_ADD_BUTTON_ID;
+    hiddenAddButton.type = "button";
+    hiddenAddButton.textContent = "+";
+    hiddenAddButton.setAttribute("aria-label", "Add hidden group");
+    hiddenAddButton.title = "Add hidden group";
+    hiddenAddButton.addEventListener("click", promptForNewHiddenGroups);
 
-    controls.append(badge, addButton);
+    const highlightedBadge = document.createElement("button");
+    highlightedBadge.id = HIGHLIGHTED_BADGE_ID;
+    highlightedBadge.type = "button";
+    highlightedBadge.addEventListener("click", promptForHighlightedGroups);
+
+    const highlightedAddButton = document.createElement("button");
+    highlightedAddButton.id = HIGHLIGHTED_ADD_BUTTON_ID;
+    highlightedAddButton.type = "button";
+    highlightedAddButton.textContent = "+";
+    highlightedAddButton.setAttribute("aria-label", "Add highlighted group");
+    highlightedAddButton.title = "Add highlighted group";
+    highlightedAddButton.addEventListener("click", promptForNewHighlightedGroups);
+
+    controls.append(hiddenBadge, hiddenAddButton, highlightedBadge, highlightedAddButton);
     table.parentElement.insertBefore(controls, table);
     return controls;
   }
 
   function updateControls() {
     const controls = ensureControls();
-    const badge = document.getElementById(BADGE_ID);
-    if (!badge) {
+    const hiddenBadge = document.getElementById(HIDDEN_BADGE_ID);
+    const highlightedBadge = document.getElementById(HIGHLIGHTED_BADGE_ID);
+    if (!hiddenBadge || !highlightedBadge) {
       return;
     }
 
-    const groupCount = hiddenGroups.length;
     if (controls) {
       controls.hidden = false;
     }
 
-    badge.textContent = `${hiddenCount} hidden by Nyaa Group Hider (${groupCount} group${groupCount === 1 ? "" : "s"})`;
-    badge.setAttribute("aria-pressed", String(showHiddenRows));
-    badge.setAttribute(
+    const hiddenGroupCount = hiddenGroups.length;
+    hiddenBadge.textContent = `${hiddenCount} hidden (${hiddenGroupCount} group${hiddenGroupCount === 1 ? "" : "s"})`;
+    hiddenBadge.setAttribute("aria-pressed", String(showHiddenRows));
+    hiddenBadge.setAttribute(
       "aria-label",
       showHiddenRows
         ? "Hide matched Nyaa releases again"
         : "Show hidden Nyaa releases"
     );
-    badge.title = showHiddenRows ? "Hide matched releases again" : "Show hidden releases";
+    hiddenBadge.title = showHiddenRows ? "Hide matched releases again" : "Show hidden releases";
+
+    const highlightedGroupCount = highlightedGroups.length;
+    highlightedBadge.textContent = `${highlightedCount} highlighted (${highlightedGroupCount} group${highlightedGroupCount === 1 ? "" : "s"})`;
+    highlightedBadge.setAttribute("aria-label", "Edit highlighted Nyaa groups");
+    highlightedBadge.title = "Edit highlighted groups";
   }
 
-  function addGroups(groups) {
-    const nextGroups = normalizeGroups(hiddenGroups.concat(groups));
-    writeStoredGroups(nextGroups);
+  function addHiddenGroups(groups) {
+    setHiddenGroups(hiddenGroups.concat(groups));
     showHiddenRows = false;
-    applyHiddenGroups();
+    applyGroupRules();
   }
 
-  function promptForNewGroups() {
+  function addHighlightedGroups(groups) {
+    setHighlightedGroups(highlightedGroups.concat(groups));
+    applyGroupRules();
+  }
+
+  function promptForNewHiddenGroups() {
     const nextValue = window.prompt("Enter Nyaa groups to hide, one per line or comma-separated:");
 
     if (nextValue == null) {
       return;
     }
 
-    addGroups(normalizeGroupInput(nextValue));
+    addHiddenGroups(normalizeGroupInput(nextValue));
+  }
+
+  function promptForNewHighlightedGroups() {
+    const nextValue = window.prompt("Enter Nyaa groups to highlight, one per line or comma-separated:");
+
+    if (nextValue == null) {
+      return;
+    }
+
+    addHighlightedGroups(normalizeGroupInput(nextValue));
+  }
+
+  function promptForHiddenGroups() {
+    const currentValue = hiddenGroups.join("\n");
+    const nextValue = window.prompt("Enter hidden Nyaa groups, one per line or comma-separated:", currentValue);
+
+    if (nextValue == null) {
+      return;
+    }
+
+    setHiddenGroups(normalizeGroupInput(nextValue));
+    showHiddenRows = false;
+    applyGroupRules();
+  }
+
+  function promptForHighlightedGroups() {
+    const currentValue = highlightedGroups.join("\n");
+    const nextValue = window.prompt("Enter highlighted Nyaa groups, one per line or comma-separated:", currentValue);
+
+    if (nextValue == null) {
+      return;
+    }
+
+    setHighlightedGroups(normalizeGroupInput(nextValue));
+    applyGroupRules();
   }
 
   function registerMenuCommand(name, handler) {
@@ -312,27 +459,29 @@
   }
 
   function registerMenuCommands() {
-    registerMenuCommand("Edit hidden groups", () => {
-      const currentValue = hiddenGroups.join("\n");
-      const nextValue = window.prompt("Enter hidden Nyaa groups, one per line or comma-separated:", currentValue);
-
-      if (nextValue == null) {
-        return;
-      }
-
-      writeStoredGroups(normalizeGroupInput(nextValue));
-      applyHiddenGroups();
-    });
+    registerMenuCommand("Edit hidden groups", promptForHiddenGroups);
 
     registerMenuCommand("Show hidden groups", () => {
       const groupList = hiddenGroups.length ? hiddenGroups.join("\n") : "(none)";
-      window.alert(`Nyaa Group Hider\n\nHidden rows on this page: ${hiddenCount}\n\nHidden groups:\n${groupList}`);
+      window.alert(`Nyaa Group Hider + Highlighter\n\nHidden rows on this page: ${hiddenCount}\n\nHidden groups:\n${groupList}`);
     });
 
     registerMenuCommand("Reset hidden groups", () => {
-      writeStoredGroups(DEFAULT_HIDDEN_GROUPS);
+      setHiddenGroups(DEFAULT_HIDDEN_GROUPS);
       showHiddenRows = false;
-      applyHiddenGroups();
+      applyGroupRules();
+    });
+
+    registerMenuCommand("Edit highlighted groups", promptForHighlightedGroups);
+
+    registerMenuCommand("Show highlighted groups", () => {
+      const groupList = highlightedGroups.length ? highlightedGroups.join("\n") : "(none)";
+      window.alert(`Nyaa Group Hider + Highlighter\n\nHighlighted rows on this page: ${highlightedCount}\n\nHighlighted groups:\n${groupList}`);
+    });
+
+    registerMenuCommand("Reset highlighted groups", () => {
+      setHighlightedGroups(DEFAULT_HIGHLIGHTED_GROUPS);
+      applyGroupRules();
     });
   }
 
@@ -362,7 +511,7 @@
   function start() {
     addStyles();
     registerMenuCommands();
-    applyHiddenGroups();
+    applyGroupRules();
   }
 
   if (document.readyState === "loading") {
