@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Nyaa Group Hider
 // @namespace    https://nyaa.si/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @description  Hide Nyaa torrent rows from configured release groups.
@@ -26,26 +26,71 @@
   const ROW_SELECTOR = "table.torrent-list tbody tr";
   const TITLE_LINK_SELECTOR = 'a[href^="/view/"]:not(.comments)';
   const HIDDEN_CLASS = "nyaa-group-hider-hidden";
+  const CONTROLS_ID = "nyaa-group-hider-controls";
   const BADGE_ID = "nyaa-group-hider-status";
+  const ADD_BUTTON_ID = "nyaa-group-hider-add";
   const STYLE_ID = "nyaa-group-hider-style";
 
   let hiddenGroups = normalizeGroups(readStoredGroups());
   let hiddenCount = 0;
+  let showHiddenRows = false;
 
   const css = `
     .${HIDDEN_CLASS} {
       display: none !important;
     }
 
-    #${BADGE_ID} {
-      display: inline-block;
+    #${CONTROLS_ID} {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       margin: 0 0 8px;
-      padding: 4px 8px;
+      font: 12px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #${BADGE_ID},
+    #${ADD_BUTTON_ID} {
+      min-height: 26px;
       border: 1px solid rgba(51, 122, 183, 0.35);
       border-radius: 4px;
       color: #23527c;
       background: rgba(217, 237, 247, 0.92);
-      font: 12px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    #${BADGE_ID} {
+      padding: 4px 8px;
+    }
+
+    #${BADGE_ID}[aria-pressed="true"] {
+      color: #1b4f72;
+      background: rgba(232, 245, 255, 0.98);
+      border-color: rgba(51, 122, 183, 0.58);
+      box-shadow: inset 0 0 0 1px rgba(51, 122, 183, 0.12);
+    }
+
+    #${ADD_BUTTON_ID} {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      padding: 0;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    #${BADGE_ID}:hover,
+    #${ADD_BUTTON_ID}:hover {
+      background: rgba(198, 230, 248, 0.98);
+      border-color: rgba(51, 122, 183, 0.6);
+    }
+
+    #${BADGE_ID}:focus-visible,
+    #${ADD_BUTTON_ID}:focus-visible {
+      outline: 2px solid rgba(51, 122, 183, 0.62);
+      outline-offset: 2px;
     }
 
     body.dark #${BADGE_ID} {
@@ -54,7 +99,19 @@
       border-color: rgba(217, 237, 247, 0.26);
     }
 
-    #${BADGE_ID}[hidden] {
+    body.dark #${BADGE_ID}[aria-pressed="true"] {
+      color: #fff;
+      background: rgba(51, 122, 183, 0.86);
+      border-color: rgba(217, 237, 247, 0.48);
+    }
+
+    body.dark #${ADD_BUTTON_ID} {
+      color: #d9edf7;
+      background: rgba(35, 82, 124, 0.72);
+      border-color: rgba(217, 237, 247, 0.26);
+    }
+
+    #${CONTROLS_ID}[hidden] {
       display: none !important;
     }
   `;
@@ -157,22 +214,22 @@
     for (const row of document.querySelectorAll(ROW_SELECTOR)) {
       const titleLink = getTitleLink(row);
       const groupName = titleLink ? getLeadingGroup(titleLink.textContent) : "";
-      const shouldHide = groupName && hiddenGroupKeys.has(groupKey(groupName));
+      const isHiddenGroup = Boolean(groupName && hiddenGroupKeys.has(groupKey(groupName)));
 
-      row.classList.toggle(HIDDEN_CLASS, Boolean(shouldHide));
+      row.classList.toggle(HIDDEN_CLASS, isHiddenGroup && !showHiddenRows);
 
-      if (shouldHide) {
+      if (isHiddenGroup) {
         hiddenCount += 1;
       }
     }
 
-    updateStatusBadge();
+    updateControls();
   }
 
-  function ensureStatusBadge() {
-    let badge = document.getElementById(BADGE_ID);
-    if (badge) {
-      return badge;
+  function ensureControls() {
+    let controls = document.getElementById(CONTROLS_ID);
+    if (controls) {
+      return controls;
     }
 
     const table = document.querySelector("table.torrent-list");
@@ -180,21 +237,68 @@
       return null;
     }
 
-    badge = document.createElement("div");
+    controls = document.createElement("div");
+    controls.id = CONTROLS_ID;
+
+    const badge = document.createElement("button");
     badge.id = BADGE_ID;
-    table.parentElement.insertBefore(badge, table);
-    return badge;
+    badge.type = "button";
+    badge.addEventListener("click", () => {
+      showHiddenRows = !showHiddenRows;
+      applyHiddenGroups();
+    });
+
+    const addButton = document.createElement("button");
+    addButton.id = ADD_BUTTON_ID;
+    addButton.type = "button";
+    addButton.textContent = "+";
+    addButton.setAttribute("aria-label", "Add hidden group");
+    addButton.title = "Add hidden group";
+    addButton.addEventListener("click", promptForNewGroups);
+
+    controls.append(badge, addButton);
+    table.parentElement.insertBefore(controls, table);
+    return controls;
   }
 
-  function updateStatusBadge() {
-    const badge = ensureStatusBadge();
+  function updateControls() {
+    const controls = ensureControls();
+    const badge = document.getElementById(BADGE_ID);
     if (!badge) {
       return;
     }
 
     const groupCount = hiddenGroups.length;
-    badge.hidden = groupCount === 0 && hiddenCount === 0;
+    if (controls) {
+      controls.hidden = false;
+    }
+
     badge.textContent = `${hiddenCount} hidden by Nyaa Group Hider (${groupCount} group${groupCount === 1 ? "" : "s"})`;
+    badge.setAttribute("aria-pressed", String(showHiddenRows));
+    badge.setAttribute(
+      "aria-label",
+      showHiddenRows
+        ? "Hide matched Nyaa releases again"
+        : "Show hidden Nyaa releases"
+    );
+    badge.title = showHiddenRows ? "Hide matched releases again" : "Show hidden releases";
+  }
+
+  function addGroups(groups) {
+    const nextGroups = normalizeGroups(hiddenGroups.concat(groups));
+    writeStoredGroups(nextGroups);
+    showHiddenRows = false;
+    applyHiddenGroups();
+  }
+
+  function promptForNewGroups() {
+    const nextValue = window.prompt("Enter Nyaa groups to hide, one per line or comma-separated:");
+
+    if (nextValue == null) {
+      return;
+    }
+
+    addGroups(normalizeGroupInput(nextValue));
   }
 
   function registerMenuCommand(name, handler) {
@@ -227,6 +331,7 @@
 
     registerMenuCommand("Reset hidden groups", () => {
       writeStoredGroups(DEFAULT_HIDDEN_GROUPS);
+      showHiddenRows = false;
       applyHiddenGroups();
     });
   }
