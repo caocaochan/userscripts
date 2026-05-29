@@ -44,6 +44,19 @@
       ]
     },
     {
+      "id": "nyaa-group-hider",
+      "name": "Nyaa Group Hider",
+      "description": "Hides Nyaa torrent rows from configured release groups.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/nyaa-group-hider.user.js",
+      "tags": [
+        "tampermonkey",
+        "nyaa",
+        "torrent",
+        "filter"
+      ]
+    },
+    {
       "id": "plex-open-in-mpv",
       "name": "Plex Open in mpv",
       "description": "Adds Open in mpv controls to local Plex detail pages and Home/library media cards, opening media through the included Windows plex-mpv:// handler.",
