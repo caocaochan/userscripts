@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Missevan Subtitle Styler
 // @namespace    https://www.missevan.com/
-// @version      0.1.4
+// @version      0.1.6
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @description  Adds readable, customizable subtitle styling controls to Missevan sound player pages.
@@ -28,6 +28,10 @@
   const REBIND_DELAY_MS = 80;
   const FONT_FALLBACK = "sans-serif";
   const MAX_FONT_FAMILY_LENGTH = 240;
+  const FONT_HELPER_SCRIPT_ID = "missevan-subtitle-styler-font-helper";
+  const FONT_HELPER_REQUEST_EVENT = "missevan-subtitle-styler-font-request";
+  const FONT_HELPER_RESPONSE_EVENT = "missevan-subtitle-styler-font-response";
+  const FONT_HELPER_TIMEOUT_MS = 15000;
 
   const FONT_OPTIONS = [
     {
@@ -147,11 +151,11 @@
       min-width: 58px;
       height: 42px;
       padding: 0 14px;
-      border: 0;
+      border: 1px solid rgba(255, 255, 255, 0.18);
       border-radius: 8px;
-      color: #08110f;
-      background: #7ce7d1;
-      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+      color: #f7fbff;
+      background: rgba(17, 24, 39, 0.95);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34);
       font: 800 14px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
       cursor: pointer;
@@ -160,7 +164,8 @@
 
     #${LAUNCHER_ID}:hover,
     #${LAUNCHER_ID}[aria-expanded="true"] {
-      background: #a0f2e2;
+      background: rgba(31, 41, 55, 0.96);
+      border-color: rgba(124, 231, 209, 0.48);
     }
 
     #${PANEL_ID} {
@@ -312,27 +317,29 @@
     #${PANEL_ID} button {
       height: 30px;
       padding: 0 11px;
-      border: 0;
+      border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 7px;
-      color: #08110f;
-      background: #7ce7d1;
+      color: #f7fbff;
+      background: rgba(31, 41, 55, 0.9);
       font: 800 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       cursor: pointer;
     }
 
     #${PANEL_ID} button:hover {
-      background: #a0f2e2;
+      background: rgba(55, 65, 81, 0.94);
+      border-color: rgba(124, 231, 209, 0.42);
     }
 
     #${PANEL_ID} button.mss-secondary {
       flex: 0 0 auto;
-      color: #dffdf7;
-      background: rgba(124, 231, 209, 0.18);
-      border: 1px solid rgba(124, 231, 209, 0.34);
+      color: rgba(247, 251, 255, 0.9);
+      background: rgba(255, 255, 255, 0.07);
+      border-color: rgba(255, 255, 255, 0.18);
     }
 
     #${PANEL_ID} button.mss-secondary:hover:not(:disabled) {
-      background: rgba(124, 231, 209, 0.28);
+      background: rgba(255, 255, 255, 0.11);
+      border-color: rgba(124, 231, 209, 0.38);
     }
 
     #${PANEL_ID} button:disabled {
@@ -353,6 +360,7 @@
   let menuCommandsInstalled = false;
   let installedFontOptions = [];
   let isLoadingInstalledFonts = false;
+  let fontRequestId = 0;
 
   function readSettings() {
     const rawValue = getStoredValue(STORAGE_KEY, null);
@@ -636,11 +644,6 @@
       return;
     }
 
-    if (typeof window.queryLocalFonts !== "function") {
-      setFontStatus("Installed font loading is not supported in this browser.");
-      return;
-    }
-
     isLoadingInstalledFonts = true;
     if (button) {
       button.disabled = true;
@@ -648,28 +651,223 @@
     setFontStatus("Requesting font access...");
 
     try {
-      const fonts = await window.queryLocalFonts();
-      const families = Array.from(new Set(fonts
-        .map((font) => normalizeFontFamilyName(font.family))
-        .filter(Boolean)))
-        .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+      const result = await requestInstalledFonts();
+      if (!result.ok) {
+        setFontStatus(getFontLoadErrorMessage(result));
+        return;
+      }
 
-      installedFontOptions = families.map((family) => ({
-        label: family,
-        value: buildLocalFontFamilyValue(family),
-      }));
-
-      refreshFontFamilySelects();
-      setFontStatus(families.length ? `Loaded ${families.length} installed font families.` : "No installed fonts found.");
+      applyInstalledFontFamilies(result.families);
     } catch (error) {
       console.warn("[Missevan Subtitle Styler] Could not load installed fonts.", error);
-      setFontStatus(isPermissionError(error) ? "Font access was denied." : "Could not load installed fonts.");
+      setFontStatus(isPermissionError(error) ? "Font access was denied." : getUnexpectedFontLoadMessage(error));
     } finally {
       isLoadingInstalledFonts = false;
       if (button) {
         button.disabled = false;
       }
     }
+  }
+
+  async function requestInstalledFonts() {
+    installFontHelper();
+
+    const helperResult = await requestInstalledFontsFromHelper();
+    if (helperResult.ok || !helperResult.helperUnavailable) {
+      return helperResult;
+    }
+
+    const fallbackResult = await requestInstalledFontsDirectly();
+    if (!fallbackResult.ok) {
+      console.warn("[Missevan Subtitle Styler] Page font helper unavailable; direct fallback also failed.", fallbackResult);
+      return {
+        ...fallbackResult,
+        helperUnavailable: true,
+      };
+    }
+
+    return fallbackResult;
+  }
+
+  function installFontHelper() {
+    if (document.getElementById(FONT_HELPER_SCRIPT_ID)) {
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = FONT_HELPER_SCRIPT_ID;
+    script.textContent = `(() => {
+      const requestEvent = ${JSON.stringify(FONT_HELPER_REQUEST_EVENT)};
+      const responseEvent = ${JSON.stringify(FONT_HELPER_RESPONSE_EVENT)};
+      if (window.__missevanSubtitleStylerFontHelperInstalled) {
+        return;
+      }
+      window.__missevanSubtitleStylerFontHelperInstalled = true;
+
+      function send(payload) {
+        window.dispatchEvent(new CustomEvent(responseEvent, {
+          detail: JSON.stringify(payload),
+        }));
+      }
+
+      window.addEventListener(requestEvent, async (event) => {
+        let id = "";
+        try {
+          const payload = JSON.parse(typeof event.detail === "string" ? event.detail : "{}");
+          id = String(payload.id || "");
+          if (typeof window.queryLocalFonts !== "function") {
+            send({
+              id,
+              ok: false,
+              name: "NotSupportedError",
+              message: "queryLocalFonts is not available.",
+            });
+            return;
+          }
+
+          const fonts = await window.queryLocalFonts();
+          send({
+            id,
+            ok: true,
+            families: fonts.map((font) => font && font.family).filter(Boolean),
+          });
+        } catch (error) {
+          send({
+            id,
+            ok: false,
+            name: String(error && error.name || "Error"),
+            message: String(error && error.message || error || "Unknown error"),
+          });
+        }
+      });
+    })();`;
+
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+
+  function requestInstalledFontsFromHelper() {
+    const id = String(++fontRequestId);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = window.setTimeout(() => {
+        settle({
+          ok: false,
+          helperUnavailable: true,
+          name: "TimeoutError",
+          message: "The page font helper did not respond.",
+        });
+      }, FONT_HELPER_TIMEOUT_MS);
+
+      function settle(result) {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        window.clearTimeout(timer);
+        window.removeEventListener(FONT_HELPER_RESPONSE_EVENT, onResponse);
+        resolve(result);
+      }
+
+      function onResponse(event) {
+        let payload = null;
+        try {
+          payload = JSON.parse(typeof event.detail === "string" ? event.detail : "{}");
+        } catch (error) {
+          console.warn("[Missevan Subtitle Styler] Could not parse font helper response.", error);
+          return;
+        }
+
+        if (String(payload.id || "") !== id) {
+          return;
+        }
+
+        settle({
+          ok: Boolean(payload.ok),
+          families: Array.isArray(payload.families) ? payload.families : [],
+          name: String(payload.name || ""),
+          message: String(payload.message || ""),
+        });
+      }
+
+      window.addEventListener(FONT_HELPER_RESPONSE_EVENT, onResponse);
+      window.dispatchEvent(new CustomEvent(FONT_HELPER_REQUEST_EVENT, {
+        detail: JSON.stringify({ id }),
+      }));
+    });
+  }
+
+  async function requestInstalledFontsDirectly() {
+    if (typeof window.queryLocalFonts !== "function") {
+      return {
+        ok: false,
+        name: "NotSupportedError",
+        message: "queryLocalFonts is not available.",
+      };
+    }
+
+    try {
+      const fonts = await window.queryLocalFonts();
+      return {
+        ok: true,
+        families: fonts.map((font) => font && font.family).filter(Boolean),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        name: String(error?.name || "Error"),
+        message: String(error?.message || error || "Unknown error"),
+      };
+    }
+  }
+
+  function applyInstalledFontFamilies(rawFamilies) {
+    const families = Array.from(new Set(rawFamilies
+      .map(normalizeFontFamilyName)
+      .filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+
+    installedFontOptions = families.map((family) => ({
+      label: family,
+      value: buildLocalFontFamilyValue(family),
+    }));
+
+    refreshFontFamilySelects();
+    setFontStatus(families.length ? `Loaded ${families.length} installed font families.` : "No installed fonts found.");
+  }
+
+  function getFontLoadErrorMessage(result) {
+    if (result?.helperUnavailable) {
+      return "Could not reach the page font helper.";
+    }
+
+    if (isUnsupportedFontError(result)) {
+      return "Installed font loading is not supported in this browser.";
+    }
+
+    if (isActivationError(result)) {
+      return "Could not open the font permission prompt. Try clicking the button again.";
+    }
+
+    if (isPermissionError(result)) {
+      return "Font access was denied.";
+    }
+
+    return getUnexpectedFontLoadMessage(result);
+  }
+
+  function getUnexpectedFontLoadMessage(error) {
+    const name = String(error?.name || "").trim();
+    const message = String(error?.message || "").trim();
+    console.warn("[Missevan Subtitle Styler] Installed font loading failed.", { name, message });
+
+    if (name || message) {
+      return `Could not load installed fonts (${name || message}).`;
+    }
+
+    return "Could not load installed fonts.";
   }
 
   function refreshFontFamilySelects() {
@@ -732,6 +930,14 @@
 
   function isPermissionError(error) {
     return /permission|denied|notallowed|security/i.test(String(error?.name || error?.message || error));
+  }
+
+  function isActivationError(error) {
+    return /activation|gesture/i.test(String(error?.name || error?.message || error));
+  }
+
+  function isUnsupportedFontError(error) {
+    return /notsupported|not supported|unavailable|querylocalfonts is not available/i.test(String(error?.name || error?.message || error));
   }
 
   function buildRangeControl(labelText, key, min, max, step, unit) {
