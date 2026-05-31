@@ -44,6 +44,20 @@
       ]
     },
     {
+      "id": "missevan-subtitle-styler",
+      "name": "Missevan Subtitle Styler",
+      "description": "Adds readable, customizable subtitle styling controls to Missevan sound player pages.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/missevan-subtitle-styler.user.js",
+      "tags": [
+        "tampermonkey",
+        "missevan",
+        "maoer",
+        "subtitles",
+        "styling"
+      ]
+    },
+    {
       "id": "nyaa-group-hider",
       "name": "Nyaa Group Hider + Highlighter",
       "description": "Hides or highlights Nyaa torrent rows from configured release groups.",
