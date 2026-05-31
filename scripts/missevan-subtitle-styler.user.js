@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Missevan Subtitle Styler
 // @namespace    https://www.missevan.com/
-// @version      0.1.6
+// @version      0.1.7
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @description  Adds readable, customizable subtitle styling controls to Missevan sound player pages.
@@ -384,7 +384,7 @@
     next.fontWeight = clampNumber(next.fontWeight, 400, 900, DEFAULT_SETTINGS.fontWeight);
     next.lineHeight = clampNumber(next.lineHeight, 1, 1.8, DEFAULT_SETTINGS.lineHeight);
     next.verticalPosition = clampNumber(next.verticalPosition, 24, 180, DEFAULT_SETTINGS.verticalPosition);
-    next.backgroundOpacity = clampNumber(next.backgroundOpacity, 0, 0.9, DEFAULT_SETTINGS.backgroundOpacity);
+    next.backgroundOpacity = clampNumber(next.backgroundOpacity, 0, 1, DEFAULT_SETTINGS.backgroundOpacity);
     next.shadowStrength = Object.prototype.hasOwnProperty.call(SHADOWS, next.shadowStrength) ? next.shadowStrength : DEFAULT_SETTINGS.shadowStrength;
     next.useRoleColors = Boolean(next.useRoleColors);
     next.textColor = /^#[0-9a-f]{6}$/i.test(String(next.textColor || "")) ? String(next.textColor) : DEFAULT_SETTINGS.textColor;
@@ -521,7 +521,7 @@
     grid.appendChild(buildRangeControl("Text boldness", "fontWeight", 400, 900, 50, ""));
     grid.appendChild(buildRangeControl("Line height", "lineHeight", 1, 1.8, 0.02, ""));
     grid.appendChild(buildRangeControl("Vertical position", "verticalPosition", 24, 180, 1, "px"));
-    grid.appendChild(buildRangeControl("Background opacity", "backgroundOpacity", 0, 0.9, 0.01, ""));
+    grid.appendChild(buildRangeControl("Background opacity", "backgroundOpacity", 0, 1, 0.01, ""));
     grid.appendChild(buildSelectControl("Text shadow", "shadowStrength", [
       { label: "None", value: "none" },
       { label: "Soft", value: "soft" },
