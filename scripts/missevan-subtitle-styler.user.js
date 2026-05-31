@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Missevan Subtitle Styler
 // @namespace    https://www.missevan.com/
-// @version      0.1.1
+// @version      0.1.2
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @description  Adds readable, customizable subtitle styling controls to Missevan sound player pages.
@@ -59,6 +59,7 @@
   const DEFAULT_SETTINGS = {
     fontFamily: FONT_OPTIONS[0].value,
     fontSize: 30,
+    fontWeight: 700,
     lineHeight: 1.28,
     verticalPosition: 74,
     backgroundOpacity: 0.62,
@@ -71,6 +72,7 @@
     :root.${ROOT_CLASS} {
       --mss-font-family: ${DEFAULT_SETTINGS.fontFamily};
       --mss-font-size: ${DEFAULT_SETTINGS.fontSize}px;
+      --mss-font-weight: ${DEFAULT_SETTINGS.fontWeight};
       --mss-line-height: ${DEFAULT_SETTINGS.lineHeight};
       --mss-bottom: ${DEFAULT_SETTINGS.verticalPosition}px;
       --mss-background-opacity: ${DEFAULT_SETTINGS.backgroundOpacity};
@@ -112,7 +114,7 @@
       background: rgba(0, 0, 0, var(--mss-background-opacity)) !important;
       font-family: var(--mss-font-family) !important;
       font-size: var(--mss-font-size) !important;
-      font-weight: 700 !important;
+      font-weight: var(--mss-font-weight) !important;
       line-height: var(--mss-line-height) !important;
       letter-spacing: 0 !important;
       text-align: center !important;
@@ -230,6 +232,11 @@
       font: 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
+    #${PANEL_ID} select option {
+      color: #111827;
+      background: #fff;
+    }
+
     #${PANEL_ID} input[type="range"] {
       accent-color: #7ce7d1;
     }
@@ -319,6 +326,7 @@
     const next = { ...DEFAULT_SETTINGS, ...(value && typeof value === "object" ? value : {}) };
     next.fontFamily = FONT_OPTIONS.some((option) => option.value === next.fontFamily) ? next.fontFamily : DEFAULT_SETTINGS.fontFamily;
     next.fontSize = clampNumber(next.fontSize, 16, 56, DEFAULT_SETTINGS.fontSize);
+    next.fontWeight = clampNumber(next.fontWeight, 400, 900, DEFAULT_SETTINGS.fontWeight);
     next.lineHeight = clampNumber(next.lineHeight, 1, 1.8, DEFAULT_SETTINGS.lineHeight);
     next.verticalPosition = clampNumber(next.verticalPosition, 24, 180, DEFAULT_SETTINGS.verticalPosition);
     next.backgroundOpacity = clampNumber(next.backgroundOpacity, 0, 0.9, DEFAULT_SETTINGS.backgroundOpacity);
@@ -386,6 +394,7 @@
     document.documentElement.classList.add(ROOT_CLASS);
     document.documentElement.style.setProperty("--mss-font-family", settings.fontFamily);
     document.documentElement.style.setProperty("--mss-font-size", `${settings.fontSize}px`);
+    document.documentElement.style.setProperty("--mss-font-weight", String(settings.fontWeight));
     document.documentElement.style.setProperty("--mss-line-height", String(settings.lineHeight));
     document.documentElement.style.setProperty("--mss-bottom", `${settings.verticalPosition}px`);
     document.documentElement.style.setProperty("--mss-background-opacity", String(settings.backgroundOpacity));
@@ -454,6 +463,7 @@
 
     grid.appendChild(buildSelectControl("Font family", "fontFamily", FONT_OPTIONS));
     grid.appendChild(buildRangeControl("Font size", "fontSize", 16, 56, 1, "px"));
+    grid.appendChild(buildRangeControl("Text boldness", "fontWeight", 400, 900, 50, ""));
     grid.appendChild(buildRangeControl("Line height", "lineHeight", 1, 1.8, 0.02, ""));
     grid.appendChild(buildRangeControl("Vertical position", "verticalPosition", 24, 180, 1, "px"));
     grid.appendChild(buildRangeControl("Background opacity", "backgroundOpacity", 0, 0.9, 0.01, ""));
