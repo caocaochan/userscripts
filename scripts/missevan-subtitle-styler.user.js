@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Missevan Subtitle Styler
 // @namespace    https://www.missevan.com/
-// @version      0.1.2
+// @version      0.1.4
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @description  Adds readable, customizable subtitle styling controls to Missevan sound player pages.
@@ -26,6 +26,8 @@
   const HIDDEN_CLASS = "missevan-subtitle-styler-hidden";
   const ROUTE_CHECK_INTERVAL_MS = 800;
   const REBIND_DELAY_MS = 80;
+  const FONT_FALLBACK = "sans-serif";
+  const MAX_FONT_FAMILY_LENGTH = 240;
 
   const FONT_OPTIONS = [
     {
@@ -119,7 +121,11 @@
       letter-spacing: 0 !important;
       text-align: center !important;
       text-shadow: var(--mss-text-shadow) !important;
+      user-select: text !important;
+      -webkit-user-select: text !important;
       white-space: normal !important;
+      cursor: text !important;
+      pointer-events: auto !important;
     }
 
     .subtitle-container.${ENHANCED_CLASS}.${COLOR_OVERRIDE_CLASS} > span {
@@ -216,6 +222,29 @@
       text-align: right;
     }
 
+    #${PANEL_ID} .mss-font-control {
+      display: grid;
+      gap: 7px;
+    }
+
+    #${PANEL_ID} .mss-font-actions {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    #${PANEL_ID} .mss-font-status {
+      min-width: 0;
+      color: rgba(247, 251, 255, 0.64);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    #${PANEL_ID} .mss-font-status[hidden] {
+      display: none !important;
+    }
+
     #${PANEL_ID} select,
     #${PANEL_ID} input[type="range"],
     #${PANEL_ID} input[type="color"] {
@@ -294,6 +323,22 @@
     #${PANEL_ID} button:hover {
       background: #a0f2e2;
     }
+
+    #${PANEL_ID} button.mss-secondary {
+      flex: 0 0 auto;
+      color: #dffdf7;
+      background: rgba(124, 231, 209, 0.18);
+      border: 1px solid rgba(124, 231, 209, 0.34);
+    }
+
+    #${PANEL_ID} button.mss-secondary:hover:not(:disabled) {
+      background: rgba(124, 231, 209, 0.28);
+    }
+
+    #${PANEL_ID} button:disabled {
+      cursor: wait;
+      opacity: 0.66;
+    }
   `;
 
   let settings = readSettings();
@@ -306,6 +351,8 @@
   let isPanelOpen = false;
   let lastHref = window.location.href;
   let menuCommandsInstalled = false;
+  let installedFontOptions = [];
+  let isLoadingInstalledFonts = false;
 
   function readSettings() {
     const rawValue = getStoredValue(STORAGE_KEY, null);
@@ -324,7 +371,7 @@
 
   function normalizeSettings(value) {
     const next = { ...DEFAULT_SETTINGS, ...(value && typeof value === "object" ? value : {}) };
-    next.fontFamily = FONT_OPTIONS.some((option) => option.value === next.fontFamily) ? next.fontFamily : DEFAULT_SETTINGS.fontFamily;
+    next.fontFamily = isSafeFontFamilyValue(next.fontFamily) ? String(next.fontFamily) : DEFAULT_SETTINGS.fontFamily;
     next.fontSize = clampNumber(next.fontSize, 16, 56, DEFAULT_SETTINGS.fontSize);
     next.fontWeight = clampNumber(next.fontWeight, 400, 900, DEFAULT_SETTINGS.fontWeight);
     next.lineHeight = clampNumber(next.lineHeight, 1, 1.8, DEFAULT_SETTINGS.lineHeight);
@@ -461,7 +508,7 @@
     grid.className = "mss-grid";
     fragment.appendChild(grid);
 
-    grid.appendChild(buildSelectControl("Font family", "fontFamily", FONT_OPTIONS));
+    grid.appendChild(buildFontFamilyControl());
     grid.appendChild(buildRangeControl("Font size", "fontSize", 16, 56, 1, "px"));
     grid.appendChild(buildRangeControl("Text boldness", "fontWeight", 400, 900, 50, ""));
     grid.appendChild(buildRangeControl("Line height", "lineHeight", 1, 1.8, 0.02, ""));
@@ -488,6 +535,40 @@
     return fragment;
   }
 
+  function buildFontFamilyControl() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "mss-font-control";
+
+    const label = document.createElement("label");
+    label.textContent = "Font family";
+
+    const select = document.createElement("select");
+    select.dataset.settingKey = "fontFamily";
+    populateFontFamilySelect(select);
+    select.addEventListener("change", () => updateSetting("fontFamily", select.value));
+
+    label.appendChild(select);
+    wrapper.appendChild(label);
+
+    const actions = document.createElement("div");
+    actions.className = "mss-font-actions";
+
+    const loadButton = document.createElement("button");
+    loadButton.type = "button";
+    loadButton.className = "mss-secondary";
+    loadButton.textContent = "Load installed fonts";
+    loadButton.addEventListener("click", () => loadInstalledFonts(loadButton));
+
+    const status = document.createElement("div");
+    status.className = "mss-font-status";
+    status.dataset.fontStatus = "true";
+    status.hidden = true;
+
+    actions.append(loadButton, status);
+    wrapper.appendChild(actions);
+    return wrapper;
+  }
+
   function buildSelectControl(labelText, key, options) {
     const label = document.createElement("label");
     label.textContent = labelText;
@@ -505,6 +586,152 @@
     select.addEventListener("change", () => updateSetting(key, select.value));
     label.appendChild(select);
     return label;
+  }
+
+  function populateFontFamilySelect(select) {
+    const previousValue = select.value || settings.fontFamily;
+    select.replaceChildren();
+
+    const options = getFontFamilyOptions(previousValue);
+    for (const option of options) {
+      const element = document.createElement("option");
+      element.value = option.value;
+      element.textContent = option.label;
+      select.appendChild(element);
+    }
+
+    select.value = previousValue;
+  }
+
+  function getFontFamilyOptions(currentValue = settings.fontFamily) {
+    const options = dedupeFontOptions([...FONT_OPTIONS, ...installedFontOptions]);
+    if (isSafeFontFamilyValue(currentValue) && !options.some((option) => option.value === currentValue)) {
+      options.push({
+        label: `Selected: ${getFontFamilyLabel(currentValue)}`,
+        value: currentValue,
+      });
+    }
+
+    return options;
+  }
+
+  function dedupeFontOptions(options) {
+    const seen = new Set();
+    const deduped = [];
+
+    for (const option of options) {
+      if (!option || !isSafeFontFamilyValue(option.value) || seen.has(option.value)) {
+        continue;
+      }
+
+      seen.add(option.value);
+      deduped.push(option);
+    }
+
+    return deduped;
+  }
+
+  async function loadInstalledFonts(button) {
+    if (isLoadingInstalledFonts) {
+      return;
+    }
+
+    if (typeof window.queryLocalFonts !== "function") {
+      setFontStatus("Installed font loading is not supported in this browser.");
+      return;
+    }
+
+    isLoadingInstalledFonts = true;
+    if (button) {
+      button.disabled = true;
+    }
+    setFontStatus("Requesting font access...");
+
+    try {
+      const fonts = await window.queryLocalFonts();
+      const families = Array.from(new Set(fonts
+        .map((font) => normalizeFontFamilyName(font.family))
+        .filter(Boolean)))
+        .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+
+      installedFontOptions = families.map((family) => ({
+        label: family,
+        value: buildLocalFontFamilyValue(family),
+      }));
+
+      refreshFontFamilySelects();
+      setFontStatus(families.length ? `Loaded ${families.length} installed font families.` : "No installed fonts found.");
+    } catch (error) {
+      console.warn("[Missevan Subtitle Styler] Could not load installed fonts.", error);
+      setFontStatus(isPermissionError(error) ? "Font access was denied." : "Could not load installed fonts.");
+    } finally {
+      isLoadingInstalledFonts = false;
+      if (button) {
+        button.disabled = false;
+      }
+    }
+  }
+
+  function refreshFontFamilySelects() {
+    if (!panel) {
+      return;
+    }
+
+    for (const select of panel.querySelectorAll('select[data-setting-key="fontFamily"]')) {
+      populateFontFamilySelect(select);
+    }
+
+    syncPanelValues();
+  }
+
+  function setFontStatus(message) {
+    if (!panel) {
+      return;
+    }
+
+    for (const status of panel.querySelectorAll("[data-font-status]")) {
+      status.textContent = message;
+      status.hidden = !message;
+    }
+  }
+
+  function buildLocalFontFamilyValue(family) {
+    return `${quoteCssString(family)}, ${FONT_FALLBACK}`;
+  }
+
+  function quoteCssString(value) {
+    return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+
+  function normalizeFontFamilyName(value) {
+    const family = String(value || "").replace(/\s+/g, " ").trim();
+    if (!family || family.length > 120 || /[\u0000-\u001f\u007f{};<>]/.test(family) || /url\s*\(/i.test(family)) {
+      return "";
+    }
+
+    return family;
+  }
+
+  function isSafeFontFamilyValue(value) {
+    const text = String(value || "").trim();
+    return Boolean(text)
+      && text.length <= MAX_FONT_FAMILY_LENGTH
+      && !/[\u0000-\u001f\u007f{};<>]/.test(text)
+      && !/\b(?:url|expression)\s*\(/i.test(text);
+  }
+
+  function getFontFamilyLabel(value) {
+    const preset = [...FONT_OPTIONS, ...installedFontOptions].find((option) => option.value === value);
+    if (preset) {
+      return preset.label;
+    }
+
+    const firstFamily = String(value || "").split(",")[0].trim();
+    return firstFamily.replace(/^"|"$/g, "").replace(/\\"/g, '"') || "Installed font";
+  }
+
+  function isPermissionError(error) {
+    return /permission|denied|notallowed|security/i.test(String(error?.name || error?.message || error));
   }
 
   function buildRangeControl(labelText, key, min, max, step, unit) {
