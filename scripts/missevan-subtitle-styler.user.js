@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Missevan Subtitle Styler
 // @namespace    https://www.missevan.com/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @description  Adds readable, customizable subtitle styling controls to Missevan sound player pages.
@@ -131,7 +131,7 @@
     #${LAUNCHER_ID} {
       position: fixed;
       right: 24px;
-      bottom: 24px;
+      bottom: 78px;
       z-index: 2147483647;
       display: inline-flex;
       align-items: center;
@@ -158,7 +158,7 @@
     #${PANEL_ID} {
       position: fixed;
       right: 24px;
-      bottom: 82px;
+      bottom: 136px;
       z-index: 2147483647;
       box-sizing: border-box;
       width: min(360px, calc(100vw - 32px));
@@ -252,9 +252,18 @@
     }
 
     #${PANEL_ID} .mss-check input {
+      position: static !important;
+      display: block !important;
+      flex: 0 0 auto;
       width: 18px;
       height: 18px;
+      min-width: 18px;
+      margin: 0;
+      opacity: 1 !important;
+      appearance: auto !important;
+      -webkit-appearance: checkbox !important;
       accent-color: #7ce7d1;
+      cursor: pointer;
     }
 
     #${PANEL_ID} .mss-actions {
