@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Missevan Subtitle Styler
 // @namespace    https://www.missevan.com/
-// @version      0.1.7
+// @version      0.1.9
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @description  Adds readable, customizable subtitle styling controls to Missevan sound player pages.
@@ -272,7 +272,63 @@
     }
 
     #${PANEL_ID} input[type="range"] {
-      accent-color: #7ce7d1;
+      box-sizing: border-box;
+      height: 18px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: transparent !important;
+      accent-color: #374151;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    #${PANEL_ID} input[type="range"]::-webkit-slider-runnable-track {
+      height: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      border-radius: 999px !important;
+      background: rgba(31, 41, 55, 0.92) !important;
+    }
+
+    #${PANEL_ID} input[type="range"]::-webkit-slider-thumb {
+      width: 18px;
+      height: 18px;
+      margin-top: -6px;
+      border: 2px solid rgba(247, 251, 255, 0.86);
+      border-radius: 999px;
+      background: #374151;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    #${PANEL_ID} input[type="range"]:hover::-webkit-slider-thumb,
+    #${PANEL_ID} input[type="range"]:focus-visible::-webkit-slider-thumb {
+      background: #4b5563;
+      border-color: rgba(124, 231, 209, 0.72);
+    }
+
+    #${PANEL_ID} input[type="range"]::-moz-range-track {
+      height: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.14) !important;
+      border-radius: 999px !important;
+      background: rgba(31, 41, 55, 0.92) !important;
+    }
+
+    #${PANEL_ID} input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(247, 251, 255, 0.86);
+      border-radius: 999px;
+      background: #374151;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    #${PANEL_ID} input[type="range"]:hover::-moz-range-thumb,
+    #${PANEL_ID} input[type="range"]:focus-visible::-moz-range-thumb {
+      background: #4b5563;
+      border-color: rgba(124, 231, 209, 0.72);
     }
 
     #${PANEL_ID} input[type="color"] {
