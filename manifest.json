@@ -3,19 +3,6 @@
   "repoUrl": "https://github.com/caocaochan/userscripts",
   "scripts": [
     {
-      "id": "yatsu-converter",
-      "name": "Yatsu Converter",
-      "description": "Adds a floating 简 / 繁 toggle to Yatsu Reader and converts reader text between simplified and traditional Chinese with OpenCC.",
-      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-converter.user.js",
-      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/yatsu-converter.user.js",
-      "tags": [
-        "tampermonkey",
-        "opencc",
-        "chinese",
-        "yatsu"
-      ]
-    },
-    {
       "id": "gagaoolala-subtitle-downloader",
       "name": "GagaOOLala Subtitle Downloader",
       "description": "Adds SRT download buttons for available GagaOOLala subtitle tracks.",

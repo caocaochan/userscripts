@@ -8,9 +8,6 @@ Userscripts in this repo can be installed directly from the raw file URL in a us
 
 ## Scripts
 
-- **Yatsu Converter**
-  Adds a floating `简` / `繁` toggle to `https://app.yatsu.moe/` and converts reader text between simplified and traditional Chinese with OpenCC while persisting the selected mode across visits.
-
 - **Plex Open in mpv**
   Adds an `Open in mpv` button to local Plex detail pages and small `mpv` buttons on Home/library media cards at `127.0.0.1:32400` / `localhost:32400`, resolving the best original media parts and handing them to an installed `plex-mpv://` protocol handler.
 
