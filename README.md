@@ -24,3 +24,6 @@ Userscripts in this repo can be installed directly from the raw file URL in a us
 
 - **GagaOOLala Subtitle Downloader**
   Adds a floating subtitles panel to `https://www.gagaoolala.com/*/videos/*` video pages and downloads available WebVTT subtitle tracks as `.srt` files. GagaOOLala exposes playback subtitle manifests only to logged-in sessions, so sign in first before refreshing the panel or starting playback.
+
+- **Yatsu Simplified Chinese**
+  Adds a small conversion toggle to `https://app.yatsu.moe/*` reader pages and converts Yatsu book content from Traditional Chinese to Simplified Chinese with OpenCC, leaving the app interface untouched.

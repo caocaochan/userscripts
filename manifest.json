@@ -72,6 +72,20 @@
         "mpv",
         "media"
       ]
+    },
+    {
+      "id": "yatsu-simplified-chinese",
+      "name": "Yatsu Simplified Chinese",
+      "description": "Converts Yatsu Reader book content from Traditional Chinese to Simplified Chinese with OpenCC.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/yatsu-simplified-chinese.user.js",
+      "tags": [
+        "tampermonkey",
+        "yatsu",
+        "opencc",
+        "chinese",
+        "simplified-chinese"
+      ]
     }
   ]
 }
