@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Yatsu Simplified Chinese
 // @namespace    https://app.yatsu.moe/
-// @version      0.1.2
+// @version      0.1.3
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @description  Converts Yatsu Reader book content from Traditional Chinese to Simplified Chinese with OpenCC.
 // @author       CaoCao
 // @match        https://app.yatsu.moe/*
 // @run-at       document-idle
-// @require      https://cdn.jsdelivr.net/npm/opencc-js@1.3.1/dist/umd/full.js
+// @require      https://cdn.jsdelivr.net/npm/opencc-js@latest/dist/umd/full.js
 // @grant        GM_addStyle
 // @grant        GM_getValue
 // @grant        GM_setValue
