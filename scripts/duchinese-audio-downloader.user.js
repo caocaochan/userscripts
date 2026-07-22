@@ -40,12 +40,15 @@
       position: absolute;
       top: 50%;
       left: 4px;
+      right: auto !important;
       z-index: 1;
       display: inline-flex;
       box-sizing: border-box;
       align-items: center;
       justify-content: center;
-      width: 28px;
+      width: 28px !important;
+      min-width: 28px !important;
+      max-width: 28px !important;
       height: 28px;
       margin: 0;
       padding: 0;
@@ -114,12 +117,6 @@
     @media (min-width: 576px) {
       #${TOAST_ID} {
         bottom: 86px;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      #${BUTTON_ID}.${BUTTON_CLASS} {
-        scroll-behavior: auto;
       }
     }
   `;
