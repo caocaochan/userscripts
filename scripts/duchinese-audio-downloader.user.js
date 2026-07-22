@@ -316,7 +316,7 @@
         GM_download({
           url,
           name: filename,
-          saveAs: true,
+          saveAs: false,
           onload: resolve,
           onerror: (error) => reject(error || new Error("GM_download failed.")),
           ontimeout: () => reject(new Error("GM_download timed out.")),
