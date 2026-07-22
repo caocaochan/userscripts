@@ -3,6 +3,20 @@
   "repoUrl": "https://github.com/caocaochan/userscripts",
   "scripts": [
     {
+      "id": "duchinese-audio-downloader",
+      "name": "Du Chinese Audio Downloader",
+      "description": "Adds an MP3 download control beside the Du Chinese lesson player.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/duchinese-audio-downloader.user.js",
+      "tags": [
+        "tampermonkey",
+        "duchinese",
+        "audio",
+        "mp3",
+        "download"
+      ]
+    },
+    {
       "id": "gagaoolala-subtitle-downloader",
       "name": "GagaOOLala Subtitle Downloader",
       "description": "Adds SRT download buttons for available GagaOOLala subtitle tracks.",
