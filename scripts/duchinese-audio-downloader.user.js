@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Du Chinese & Yomu Yomu Audio Downloader
 // @namespace    https://duchinese.net/
-// @version      0.3.0
+// @version      0.4.0
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @description  Adds an audio download button beside the Du Chinese and Yomu Yomu lesson players.
@@ -128,6 +128,7 @@
   let syncFrame = 0;
   let toastTimer = 0;
   let hasWarnedAboutPlayerMarkup = false;
+  let isDownloadActive = false;
 
   function addStyle() {
     if (typeof GM_addStyle === "function") {
@@ -174,14 +175,15 @@
   }
 
   function ensureSlot(playWrapper) {
+    const controls = playWrapper.parentElement;
     let slot = playWrapper.nextElementSibling;
-    if (!slot?.hasAttribute(CREATED_SLOT_ATTRIBUTE)) {
+    if (!slot || slot.parentElement !== controls) {
       slot = document.createElement("div");
       slot.setAttribute(CREATED_SLOT_ATTRIBUTE, "true");
-      slot.classList.add(SLOT_CLASS);
       playWrapper.insertAdjacentElement("afterend", slot);
     }
 
+    slot.classList.add(SLOT_CLASS);
     return slot;
   }
 
@@ -215,19 +217,27 @@
       slot.appendChild(button);
     }
 
+    setButtonBusy(button, isDownloadActive);
     return button;
   }
 
-  function removeInjectedControl() {
-    const button = document.getElementById(BUTTON_ID);
-    if (button?.disabled) {
-      return;
-    }
+  function cleanupUnusedSlots(activeSlot = null) {
+    for (const slot of document.querySelectorAll(`.${SLOT_CLASS}`)) {
+      if (slot === activeSlot) {
+        continue;
+      }
 
-    button?.remove();
-    for (const slot of document.querySelectorAll(`[${CREATED_SLOT_ATTRIBUTE}]`)) {
-      slot.remove();
+      if (slot.hasAttribute(CREATED_SLOT_ATTRIBUTE)) {
+        slot.remove();
+      } else {
+        slot.classList.remove(SLOT_CLASS);
+      }
     }
+  }
+
+  function removeInjectedControl() {
+    document.getElementById(BUTTON_ID)?.remove();
+    cleanupUnusedSlots();
   }
 
   function warnAboutPlayerMarkupOnce() {
@@ -255,7 +265,9 @@
       return;
     }
 
-    ensureButton(ensureSlot(playWrapper));
+    const slot = ensureSlot(playWrapper);
+    ensureButton(slot);
+    cleanupUnusedSlots(slot);
   }
 
   function scheduleSync() {
@@ -283,6 +295,7 @@
     }
 
     const filename = buildFilename(audioUrl);
+    isDownloadActive = true;
     setButtonBusy(button, true);
 
     try {
@@ -297,7 +310,13 @@
         showToast(error?.userFacing ? error.message : "Audio download failed. See the console for details.", true);
       }
     } finally {
+      isDownloadActive = false;
       setButtonBusy(button, false);
+      const currentButton = document.getElementById(BUTTON_ID);
+      if (currentButton instanceof HTMLButtonElement && currentButton !== button) {
+        setButtonBusy(currentButton, false);
+      }
+      scheduleSync();
     }
   }
 
@@ -317,7 +336,25 @@
   }
 
   function isCancelledDownload(error) {
-    return error?.error === "user_canceled";
+    const reasons = [
+      error,
+      error?.error,
+      error?.message,
+      typeof error?.details === "string" ? error.details : "",
+      error?.details?.current,
+    ];
+
+    return reasons.some((reason) => {
+      if (typeof reason !== "string") {
+        return false;
+      }
+
+      const normalized = reason.trim().toUpperCase();
+      return normalized === "USER_CANCELED"
+        || normalized === "USER_CANCELLED"
+        || normalized === "CANCELED"
+        || normalized === "CANCELLED";
+    });
   }
 
   function assertSupportedAudioHost(audioUrl) {
@@ -389,9 +426,25 @@
             }
 
             try {
+              if (response.response == null) {
+                reject(userError("Audio request returned no data."));
+                return;
+              }
+
+              const contentType = getResponseContentType(response);
               const blob = response.response instanceof Blob
                 ? response.response
-                : new Blob([response.response], { type: response.responseHeaders?.match(/content-type:\s*([^\r\n]+)/i)?.[1] || "audio/mpeg" });
+                : new Blob([response.response], { type: contentType || "audio/mpeg" });
+              if (blob.size === 0) {
+                reject(userError("Audio request returned an empty file."));
+                return;
+              }
+
+              if (!isSupportedAudioContentType(contentType)) {
+                reject(userError(`Audio request returned unsupported content type: ${contentType}.`));
+                return;
+              }
+
               triggerBlobDownload(blob, filename);
               resolve();
             } catch (error) {
@@ -405,6 +458,16 @@
         reject(error);
       }
     });
+  }
+
+  function getResponseContentType(response) {
+    const headerType = response.responseHeaders?.match(/(?:^|\r?\n)content-type:\s*([^\r\n]+)/i)?.[1]?.trim();
+    return headerType || (response.response instanceof Blob ? response.response.type : "") || "";
+  }
+
+  function isSupportedAudioContentType(contentType) {
+    const normalized = String(contentType || "").split(";", 1)[0].trim().toLowerCase();
+    return !normalized || normalized.startsWith("audio/") || normalized === "application/octet-stream";
   }
 
   function triggerBlobDownload(blob, filename) {
@@ -424,11 +487,18 @@
   }
 
   function buildFilename(audioUrl) {
-    const title = sanitizeFilenamePart(getLessonTitle());
-    const lessonId = getLessonId();
+    const title = getLessonTitle().trim();
+    const lessonId = getLessonId(audioUrl);
     const brand = getSiteName();
     const fallback = lessonId ? `${brand} Lesson ${lessonId}` : `${brand} Lesson`;
-    return `${title || fallback}.${getAudioExtension(audioUrl)}`;
+    const chapter = getCourseChapter();
+    const suffix = chapter ? ` - Chapter ${String(chapter).padStart(2, "0")}` : "";
+    const base = title || fallback;
+    const maxBaseLength = Math.max(1, MAX_TITLE_LENGTH - Array.from(suffix).length);
+    const truncatedBase = Array.from(base).slice(0, maxBaseLength).join("");
+    const stem = sanitizeFilenamePart(`${truncatedBase}${suffix}`)
+      || sanitizeFilenamePart(`${fallback}${suffix}`);
+    return `${stem}.${getAudioExtension(audioUrl)}`;
   }
 
   function getSiteName() {
@@ -440,8 +510,27 @@
     return heading?.textContent || "";
   }
 
-  function getLessonId() {
-    return window.location.pathname.match(/\/lessons\/(\d+)(?:[-/]|$)/)?.[1] || "";
+  function getLessonId(audioUrl) {
+    const routeId = window.location.pathname.match(/\/lessons\/(\d+)(?:[-/]|$)/)?.[1];
+    if (routeId) {
+      return routeId;
+    }
+
+    try {
+      return new URL(audioUrl).pathname.match(/\/documents\/(\d+)(?:\/|$)/)?.[1] || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function getCourseChapter() {
+    const value = new URLSearchParams(window.location.search).get("chapter") || "";
+    if (!/^[1-9]\d*$/.test(value)) {
+      return "";
+    }
+
+    const chapter = Number(value);
+    return Number.isSafeInteger(chapter) ? chapter : "";
   }
 
   function sanitizeFilenamePart(value) {
