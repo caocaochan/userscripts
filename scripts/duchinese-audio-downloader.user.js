@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Du Chinese & Yomu Yomu Audio Downloader
 // @namespace    https://duchinese.net/
-// @version      0.2.0
+// @version      0.3.0
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @description  Adds an audio download button beside the Du Chinese and Yomu Yomu lesson players.
@@ -14,8 +14,8 @@
 // @grant        GM_addStyle
 // @grant        GM_download
 // @grant        GM_xmlhttpRequest
-// @connect      static.duchinese.net
-// @connect      static.yomuyomu.app
+// @connect      duchinese.net
+// @connect      yomuyomu.app
 // ==/UserScript==
 
 (() => {
@@ -27,9 +27,10 @@
   const SLOT_CLASS = "duchinese-audio-downloader-slot";
   const TOAST_ID = "duchinese-audio-downloader-toast";
   const CREATED_SLOT_ATTRIBUTE = "data-duchinese-audio-downloader-created-slot";
-  const SUPPORTED_AUDIO_HOSTS = new Set(["static.duchinese.net", "static.yomuyomu.app"]);
+  const SUPPORTED_AUDIO_DOMAINS = ["duchinese.net", "yomuyomu.app"];
   const MAX_TITLE_LENGTH = 160;
   const TOAST_DURATION_MS = 3500;
+  const REQUEST_TIMEOUT_MS = 60000;
   const AUDIO_EXTENSION_PATTERN = /^(?:aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i;
 
   const css = `
@@ -126,7 +127,7 @@
 
   let syncFrame = 0;
   let toastTimer = 0;
-  let observer = null;
+  let hasWarnedAboutPlayerMarkup = false;
 
   function addStyle() {
     if (typeof GM_addStyle === "function") {
@@ -157,34 +158,30 @@
 
     try {
       const url = new URL(candidate, window.location.href);
-      return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+      return url.protocol === "https:" ? url.toString() : "";
     } catch {
       return "";
     }
   }
 
-  function getPlayerElements() {
+  function getPlayWrapper() {
     const audio = getAudioElement();
     const player = audio?.closest("#du-player");
     const playWrapper = player?.closest(".du-player-button");
     const controls = playWrapper?.closest(".du-player-controls");
 
-    if (!audio || !player || !playWrapper || !controls) {
-      return null;
-    }
-
-    return { audio, player, playWrapper, controls };
+    return controls ? playWrapper : null;
   }
 
-  function ensureSlot(playWrapper, controls) {
+  function ensureSlot(playWrapper) {
     let slot = playWrapper.nextElementSibling;
-    if (!slot || slot.parentElement !== controls) {
+    if (!slot?.hasAttribute(CREATED_SLOT_ATTRIBUTE)) {
       slot = document.createElement("div");
       slot.setAttribute(CREATED_SLOT_ATTRIBUTE, "true");
+      slot.classList.add(SLOT_CLASS);
       playWrapper.insertAdjacentElement("afterend", slot);
     }
 
-    slot.classList.add(SLOT_CLASS);
     return slot;
   }
 
@@ -222,22 +219,43 @@
   }
 
   function removeInjectedControl() {
-    document.getElementById(BUTTON_ID)?.remove();
+    const button = document.getElementById(BUTTON_ID);
+    if (button?.disabled) {
+      return;
+    }
+
+    button?.remove();
     for (const slot of document.querySelectorAll(`[${CREATED_SLOT_ATTRIBUTE}]`)) {
       slot.remove();
     }
   }
 
+  function warnAboutPlayerMarkupOnce() {
+    if (hasWarnedAboutPlayerMarkup) {
+      return;
+    }
+
+    hasWarnedAboutPlayerMarkup = true;
+    console.warn(SCRIPT_PREFIX, "Found the lesson audio element but not its player controls; the site markup may have changed.");
+  }
+
   function syncButton() {
-    const audioUrl = getAudioUrl();
-    const elements = getPlayerElements();
-    if (!audioUrl || !elements) {
+    const playWrapper = getPlayWrapper();
+    if (!playWrapper) {
+      if (getAudioElement()) {
+        warnAboutPlayerMarkupOnce();
+      }
+
       removeInjectedControl();
       return;
     }
 
-    const slot = ensureSlot(elements.playWrapper, elements.controls);
-    ensureButton(slot);
+    if (!getAudioUrl()) {
+      removeInjectedControl();
+      return;
+    }
+
+    ensureButton(ensureSlot(playWrapper));
   }
 
   function scheduleSync() {
@@ -272,11 +290,12 @@
       const method = await downloadAudio(audioUrl, filename);
       showToast(method === "gm" ? `Downloaded ${filename}` : `Downloading ${filename}`);
     } catch (error) {
-      console.error(SCRIPT_PREFIX, "Audio download failed.", error);
-      const message = error instanceof Error && error.message.startsWith("Unsupported audio host:")
-        ? error.message
-        : "Audio download failed. See the console for details.";
-      showToast(message, true);
+      if (isCancelledDownload(error)) {
+        showToast("Download cancelled.");
+      } else {
+        console.error(SCRIPT_PREFIX, "Audio download failed.", error);
+        showToast(error?.userFacing ? error.message : "Audio download failed. See the console for details.", true);
+      }
     } finally {
       setButtonBusy(button, false);
     }
@@ -291,10 +310,24 @@
     }
   }
 
+  function userError(message) {
+    const error = new Error(message);
+    error.userFacing = true;
+    return error;
+  }
+
+  function isCancelledDownload(error) {
+    return error?.error === "user_canceled";
+  }
+
   function assertSupportedAudioHost(audioUrl) {
-    const hostname = new URL(audioUrl).hostname;
-    if (!SUPPORTED_AUDIO_HOSTS.has(hostname)) {
-      throw new Error(`Unsupported audio host: ${hostname}`);
+    const hostname = new URL(audioUrl).hostname.toLowerCase();
+    const isSupported = SUPPORTED_AUDIO_DOMAINS.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
+    );
+
+    if (!isSupported) {
+      throw userError(`Unsupported audio host: ${hostname}`);
     }
   }
 
@@ -303,6 +336,10 @@
       await downloadViaGm(url, filename);
       return "gm";
     } catch (error) {
+      if (isCancelledDownload(error)) {
+        throw error;
+      }
+
       console.warn(SCRIPT_PREFIX, "GM_download failed; retrying with GM_xmlhttpRequest.", error);
       await downloadViaRequest(url, filename);
       return "request";
@@ -341,12 +378,13 @@
           method: "GET",
           url,
           responseType: "blob",
+          timeout: REQUEST_TIMEOUT_MS,
           headers: {
             Accept: "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
           },
           onload: (response) => {
             if (response.status < 200 || response.status >= 300) {
-              reject(new Error(`Audio request failed with HTTP ${response.status}.`));
+              reject(userError(`Audio request failed with HTTP ${response.status}.`));
               return;
             }
 
@@ -410,11 +448,10 @@
     let title = String(value || "")
       .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, "-")
       .replace(/\s+/g, " ")
-      .replace(/[.\s]+$/g, "")
-      .trim();
+      .replace(/^[.\s-]+|[.\s-]+$/g, "");
 
-    title = Array.from(title).slice(0, MAX_TITLE_LENGTH).join("").replace(/[.\s]+$/g, "").trim();
-    if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(title)) {
+    title = Array.from(title).slice(0, MAX_TITLE_LENGTH).join("").replace(/[.\s-]+$/g, "");
+    if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(title)) {
       title = `_${title}`;
     }
 
@@ -450,8 +487,7 @@
     addStyle();
     syncButton();
 
-    observer = new MutationObserver(scheduleSync);
-    observer.observe(document.documentElement, {
+    new MutationObserver(scheduleSync).observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
@@ -459,9 +495,5 @@
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start, { once: true });
-  } else {
-    start();
-  }
+  start();
 })();
