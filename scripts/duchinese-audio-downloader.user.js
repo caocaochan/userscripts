@@ -1,30 +1,33 @@
 // ==UserScript==
-// @name         Du Chinese Audio Downloader
+// @name         Du Chinese & Yomu Yomu Audio Downloader
 // @namespace    https://duchinese.net/
-// @version      0.1.0
+// @version      0.2.0
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
-// @description  Adds an audio download button beside the Du Chinese lesson player.
+// @description  Adds an audio download button beside the Du Chinese and Yomu Yomu lesson players.
 // @author       CaoCao
 // @match        https://duchinese.net/lessons/*
 // @match        https://www.duchinese.net/lessons/*
+// @match        https://yomuyomu.app/lessons/*
+// @match        https://www.yomuyomu.app/lessons/*
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_download
 // @grant        GM_xmlhttpRequest
 // @connect      static.duchinese.net
+// @connect      static.yomuyomu.app
 // ==/UserScript==
 
 (() => {
   "use strict";
 
-  const SCRIPT_PREFIX = "[Du Chinese Audio Downloader]";
+  const SCRIPT_PREFIX = "[Du Chinese & Yomu Yomu Audio Downloader]";
   const BUTTON_ID = "duchinese-audio-downloader-button";
   const BUTTON_CLASS = "duchinese-audio-downloader-button";
   const SLOT_CLASS = "duchinese-audio-downloader-slot";
   const TOAST_ID = "duchinese-audio-downloader-toast";
   const CREATED_SLOT_ATTRIBUTE = "data-duchinese-audio-downloader-created-slot";
-  const SUPPORTED_AUDIO_HOST = "static.duchinese.net";
+  const SUPPORTED_AUDIO_HOSTS = new Set(["static.duchinese.net", "static.yomuyomu.app"]);
   const MAX_TITLE_LENGTH = 160;
   const TOAST_DURATION_MS = 3500;
   const AUDIO_EXTENSION_PATTERN = /^(?:aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i;
@@ -290,7 +293,7 @@
 
   function assertSupportedAudioHost(audioUrl) {
     const hostname = new URL(audioUrl).hostname;
-    if (hostname !== SUPPORTED_AUDIO_HOST) {
+    if (!SUPPORTED_AUDIO_HOSTS.has(hostname)) {
       throw new Error(`Unsupported audio host: ${hostname}`);
     }
   }
@@ -385,8 +388,13 @@
   function buildFilename(audioUrl) {
     const title = sanitizeFilenamePart(getLessonTitle());
     const lessonId = getLessonId();
-    const fallback = lessonId ? `Du Chinese Lesson ${lessonId}` : "Du Chinese Lesson";
+    const brand = getSiteName();
+    const fallback = lessonId ? `${brand} Lesson ${lessonId}` : `${brand} Lesson`;
     return `${title || fallback}.${getAudioExtension(audioUrl)}`;
+  }
+
+  function getSiteName() {
+    return /(?:^|\.)yomuyomu\.app$/i.test(window.location.hostname) ? "Yomu Yomu" : "Du Chinese";
   }
 
   function getLessonTitle() {

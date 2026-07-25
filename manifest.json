@@ -4,13 +4,15 @@
   "scripts": [
     {
       "id": "duchinese-audio-downloader",
-      "name": "Du Chinese Audio Downloader",
-      "description": "Adds an MP3 download control beside the Du Chinese lesson player.",
+      "name": "Du Chinese & Yomu Yomu Audio Downloader",
+      "description": "Adds an MP3 download control beside the Du Chinese and Yomu Yomu lesson players.",
       "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js",
       "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/duchinese-audio-downloader.user.js",
       "tags": [
         "tampermonkey",
         "duchinese",
+        "yomuyomu",
+        "japanese",
         "audio",
         "mp3",
         "download"

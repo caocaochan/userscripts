@@ -8,8 +8,8 @@ Userscripts in this repo can be installed directly from the raw file URL in a us
 
 ## Scripts
 
-- **Du Chinese Audio Downloader**
-  Runs on Du Chinese lesson pages and adds a download icon beside the fixed play control. Downloads use the audio URL already supplied to the lesson player and are named from the lesson title.
+- **Du Chinese & Yomu Yomu Audio Downloader**
+  Runs on `https://duchinese.net/lessons/*` and `https://yomuyomu.app/lessons/*` pages and adds a download icon beside the fixed play control. Both sites share the same lesson player, so one script covers them. Downloads use the audio URL already supplied to the lesson player and are named from the lesson title.
 
 - **Plex Open in mpv**
   Adds an `Open in mpv` button to local Plex detail pages and small `mpv` buttons on Home/library media cards at `127.0.0.1:32400` / `localhost:32400`, resolving the best original media parts and handing them to an installed `plex-mpv://` protocol handler.
