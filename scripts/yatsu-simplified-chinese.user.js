@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Yatsu Reader — Traditional to Simplified Chinese
 // @namespace    https://app.yatsu.moe/
-// @version      1.2.3
+// @version      1.2.4
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @description  Converts Traditional Chinese text on app.yatsu.moe to Simplified orthography using OpenCC without regional vocabulary localization.
 // @author       CaoCao
 // @match        https://app.yatsu.moe/*
-// @require      https://cdn.jsdelivr.net/npm/opencc-js@1.4.1/dist/umd/t2cn.js#sha256-cnj6Y5j1mnkHXndo208qeMqyKFQXA6HVkAIsGeIzQZ8=
+// @require      https://cdn.jsdelivr.net/npm/opencc-js@latest/dist/umd/t2cn.js
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
@@ -51,12 +51,12 @@
     // Orthographic conversion: 裡→里, 說→说, but keeps original vocabulary.
     const convert = openCC.Converter({ from: 't', to: 'cn' });
 
-    // Apply unambiguous Taiwan-to-Mainland orthographic variants without
-    // enabling OpenCC's regional vocabulary localization. 鉅著 intentionally
+    // Apply Taiwan-to-Mainland orthographic variants that do not collide with
+    // ordinary Simplified text, without enabling regional vocabulary
+    // localization. Ambiguous 么 is deliberately preserved. 鉅著 intentionally
     // keeps its direct simplified form instead of being normalized to 巨著.
     const preNormalize = openCC.CustomConverter([
       ['鉅著', '钜著'],
-      ['么', '幺'],
       ['潀', '潨'],
       ['痺', '痹'],
       ['睪', '睾'],
@@ -70,6 +70,9 @@
       '合著', '拙著', '遺著', '顯著', '昭著', '卓著', '土著', '新著',
       '舊著', '近著',
     ];
+    const PROTECTED_ZHU_LEXEMES = new Set(
+      ZHU_LEXEMES.flatMap((lexeme) => [lexeme, convert(lexeme)])
+    );
 
     let wordSegmenter = null;
     try {
@@ -91,7 +94,7 @@
       if (segment === '著' || !segment.includes('著')) return segment;
 
       const protectedOffsets = new Set();
-      for (const lexeme of ZHU_LEXEMES) {
+      for (const lexeme of PROTECTED_ZHU_LEXEMES) {
         let lexemeOffset = segment.indexOf(lexeme);
         while (lexemeOffset !== -1) {
           for (let index = 0; index < lexeme.length; index += 1) {

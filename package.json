@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/caocaochan/userscripts#readme",
   "devDependencies": {
-    "opencc-js": "1.4.1",
+    "opencc-js": "latest",
     "playwright": "^1.60.0"
   }
 }

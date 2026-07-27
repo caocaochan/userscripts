@@ -1,4 +1,3 @@
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test, expect } = require("playwright/test");
@@ -85,19 +84,18 @@ test("all in-scope scripts use their exact modern Tampermonkey grants", () => {
   }
 });
 
-test("Yatsu uses the DOM sandbox and an integrity-pinned OpenCC 1.4.1 bundle", () => {
+test("Yatsu uses the DOM sandbox and the latest optimized OpenCC bundle", () => {
   const source = readScript("yatsu-simplified-chinese.user.js");
-  const openCCSource = fs.readFileSync(OPENCC_UMD_PATH);
-  const openCCDigest = crypto.createHash("sha256").update(openCCSource).digest("base64");
   const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf8"));
 
-  expect(source).toContain("// @version      1.2.3");
+  expect(source).toContain("// @version      1.2.4");
   expect(source).toContain("// @sandbox      DOM");
   expect(source).toContain(
-    "// @require      https://cdn.jsdelivr.net/npm/opencc-js@1.4.1/dist/umd/t2cn.js"
-      + `#sha256-${openCCDigest}`,
+    "// @require      https://cdn.jsdelivr.net/npm/opencc-js@latest/dist/umd/t2cn.js",
   );
-  expect(packageJson.devDependencies["opencc-js"]).toBe("1.4.1");
+  expect(source).not.toMatch(/opencc-js@\d/);
+  expect(source).not.toMatch(/#(?:md5|sha(?:1|224|256|384|512))=/i);
+  expect(packageJson.devDependencies["opencc-js"]).toBe("latest");
   expect(source).not.toMatch(/^\/\/ @run-in\b/m);
   expect(source).not.toContain("window.onurlchange");
 });
@@ -346,14 +344,13 @@ test("Yatsu awaits its setting, registers a descriptive menu, and converts eligi
   ]);
   await expect.poll(
     () => page.evaluate(() => window.__gmCalls.customConverter[0]),
-  ).toEqual(expect.arrayContaining([
+  ).toEqual([
     ["鉅著", "钜著"],
-    ["么", "幺"],
     ["潀", "潨"],
     ["痺", "痹"],
     ["睪", "睾"],
     ["簷", "檐"],
-  ]));
+  ]);
   await expect.poll(() => page.evaluate(() => window.__gmCalls.customConverter.length)).toBe(1);
 
   await page.locator("main").evaluate((main) => {
@@ -364,7 +361,7 @@ test("Yatsu awaits its setting, registers a descriptive menu, and converts eligi
   await expect.poll(() => page.locator("p").textContent()).toBe("动态内容");
 });
 
-test("Yatsu preserves phrase context across inline and ruby markup with the pinned OpenCC bundle", async ({ page }) => {
+test("Yatsu preserves phrase context across inline and ruby markup with OpenCC", async ({ page }) => {
   await page.setContent(
     '<title>傳統標題</title>'
       + '<main>'
@@ -462,7 +459,11 @@ test("Yatsu disambiguates 著 by word without crossing lexical boundaries", asyn
     ["作者著書", "作者著书"],
     ["拿著書", "拿着书"],
     ["他微笑著說", "他微笑著说"],
-    ["么妹", "幺妹"],
+    ["么妹", "么妹"],
+    ["什麼", "什么"],
+    ["怎麼", "怎么"],
+    ["那麼", "那么"],
+    ["為什麼", "为什么"],
     ["麻痺", "麻痹"],
     ["睪丸", "睾丸"],
     ["屋簷", "屋檐"],
@@ -470,9 +471,14 @@ test("Yatsu disambiguates 著 by word without crossing lexical boundaries", asyn
   ];
 
   await page.setContent(
-    `<main>${cases.map(([source], index) => (
-      `<p data-case="${index}">${source}</p>`
-    )).join("")}</main>`,
+    `<main>`
+      + `<section id="traditional-cases">${cases.map(([source], index) => (
+        `<p data-case="${index}">${source}</p>`
+      )).join("")}</section>`
+      + `<section id="idempotent-cases">${cases.map(([, expected], index) => (
+        `<p data-idempotent-case="${index}">${expected}</p>`
+      )).join("")}</section>`
+      + `</main>`,
   );
   await page.addScriptTag({ path: OPENCC_UMD_PATH });
   await page.evaluate(() => {
@@ -492,6 +498,46 @@ test("Yatsu disambiguates 著 by word without crossing lexical boundaries", asyn
   await expect.poll(
     () => page.locator("[data-case]").allTextContents(),
   ).toEqual(cases.map(([, expected]) => expected));
+  await expect.poll(
+    () => page.locator("[data-idempotent-case]").allTextContents(),
+  ).toEqual(cases.map(([, expected]) => expected));
+});
+
+test("Yatsu preserves already-Simplified and mixed-script text", async ({ page }) => {
+  const simplifiedCases = [
+    "什么", "怎么", "这么", "那么", "多么", "为什么", "要么",
+    "著录", "著称", "专著", "编著", "显著", "看着书", "接着说",
+  ];
+
+  await page.setContent(
+    `<main>`
+      + `<section id="simplified-cases">${simplifiedCases.map((text, index) => (
+        `<p data-simplified-case="${index}">${text}</p>`
+      )).join("")}</section>`
+      + `<p id="mixed-script">這是一本專著；这是一本专著</p>`
+      + `</main>`,
+  );
+  await page.addScriptTag({ path: OPENCC_UMD_PATH });
+  await page.evaluate(() => {
+    window.GM = {
+      async getValue() {
+        return true;
+      },
+      async setValue() {},
+      registerMenuCommand() {
+        return "menu-id";
+      },
+    };
+  });
+
+  await page.addScriptTag({ path: scriptPath("yatsu-simplified-chinese.user.js") });
+
+  await expect.poll(
+    () => page.locator("[data-simplified-case]").allTextContents(),
+  ).toEqual(simplifiedCases);
+  await expect(page.locator("#mixed-script")).toHaveText(
+    "这是一本专著；这是一本专著",
+  );
 });
 
 test("Yatsu conservatively leaves 著 unchanged when Intl.Segmenter is unavailable", async ({ page }) => {
@@ -646,7 +692,9 @@ test("Yatsu safely falls back when conversion changes code-point count without o
     window.OpenCC = {
       Converter() {
         return (text) => {
-          window.__converterCalls += 1;
+          if (text.includes("傳") || text.includes("統")) {
+            window.__converterCalls += 1;
+          }
           if (text === "傳統") return "传统额";
           return text.replaceAll("傳", "传").replaceAll("統", "统");
         };
