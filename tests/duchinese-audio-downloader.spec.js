@@ -27,6 +27,7 @@ async function mountScript(page, {
   audioUrl = DEFAULT_AUDIO_URL,
   includeHeading = true,
   includeSiteSlot = true,
+  downloadAvailable = true,
   downloadOutcome = "success",
   downloadError = null,
   requestOutcome = { kind: "audio" },
@@ -53,6 +54,7 @@ async function mountScript(page, {
 
   await page.evaluate((configuration) => {
     window.__gmCalls = {
+      styles: [],
       downloads: [],
       requests: [],
       anchorDownloads: [],
@@ -62,68 +64,79 @@ async function mountScript(page, {
     window.__requestOutcome = configuration.requestOutcome;
     window.__pendingDownload = null;
 
-    window.GM_addStyle = (css) => {
-      const style = document.createElement("style");
-      style.textContent = css;
-      document.head.appendChild(style);
-      return style;
-    };
+    window.GM = {
+      addStyle(css) {
+        window.__gmCalls.styles.push(css);
+        const style = document.createElement("style");
+        style.textContent = css;
+        document.head.appendChild(style);
+        return style;
+      },
 
-    window.GM_download = (options) => {
-      window.__gmCalls.downloads.push({
-        url: options.url,
-        name: options.name,
-        saveAs: options.saveAs,
-      });
-
-      if (window.__downloadOutcome === "pending") {
-        window.__pendingDownload = options;
-      } else if (window.__downloadOutcome === "error") {
-        queueMicrotask(() => options.onerror(window.__downloadError));
-      } else {
-        queueMicrotask(() => options.onload());
-      }
-    };
-
-    window.GM_xmlhttpRequest = (options) => {
-      window.__gmCalls.requests.push({
-        method: options.method,
-        url: options.url,
-        responseType: options.responseType,
-      });
-
-      const outcome = window.__requestOutcome;
-      queueMicrotask(() => {
-        if (outcome.kind === "network-error") {
-          options.onerror({ error: "network_failed" });
-          return;
-        }
-
-        let response;
-        let responseHeaders = "";
-        if (outcome.kind === "empty") {
-          response = new Blob([], { type: "audio/mpeg" });
-          responseHeaders = "Content-Type: audio/mpeg\r\n";
-        } else if (outcome.kind === "html") {
-          response = new Blob(["<html>Error</html>"], { type: "text/html" });
-          responseHeaders = "Content-Type: text/html; charset=utf-8\r\n";
-        } else if (outcome.kind === "octet-stream") {
-          response = new Blob(["audio"], { type: "application/octet-stream" });
-          responseHeaders = "Content-Type: application/octet-stream\r\n";
-        } else if (outcome.kind === "missing-mime") {
-          response = new Blob(["audio"]);
-        } else {
-          response = new Blob(["audio"], { type: "audio/mpeg" });
-          responseHeaders = "Content-Type: audio/mpeg\r\n";
-        }
-
-        options.onload({
-          status: outcome.status || 200,
-          response,
-          responseHeaders,
+      xmlHttpRequest(options) {
+        window.__gmCalls.requests.push({
+          method: options.method,
+          url: options.url,
+          responseType: options.responseType,
+          timeout: options.timeout,
+          accept: options.headers?.Accept,
         });
-      });
+
+        const outcome = window.__requestOutcome;
+        return new Promise((resolve, reject) => {
+          queueMicrotask(() => {
+            if (outcome.kind === "network-error") {
+              reject({ error: "network_failed" });
+              return;
+            }
+
+            let response;
+            let responseHeaders = "";
+            if (outcome.kind === "empty") {
+              response = new Blob([], { type: "audio/mpeg" });
+              responseHeaders = "Content-Type: audio/mpeg\r\n";
+            } else if (outcome.kind === "html") {
+              response = new Blob(["<html>Error</html>"], { type: "text/html" });
+              responseHeaders = "Content-Type: text/html; charset=utf-8\r\n";
+            } else if (outcome.kind === "octet-stream") {
+              response = new Blob(["audio"], { type: "application/octet-stream" });
+              responseHeaders = "Content-Type: application/octet-stream\r\n";
+            } else if (outcome.kind === "missing-mime") {
+              response = new Blob(["audio"]);
+            } else {
+              response = new Blob(["audio"], { type: "audio/mpeg" });
+              responseHeaders = "Content-Type: audio/mpeg\r\n";
+            }
+
+            resolve({
+              status: outcome.status || 200,
+              response,
+              responseHeaders,
+            });
+          });
+        });
+      },
     };
+
+    if (configuration.downloadAvailable) {
+      window.GM.download = (options) => {
+        window.__gmCalls.downloads.push({
+          url: options.url,
+          name: options.name,
+          saveAs: options.saveAs,
+        });
+
+        return new Promise((resolve, reject) => {
+          if (window.__downloadOutcome === "pending") {
+            window.__pendingDownload = { resolve, reject };
+          } else if (window.__downloadOutcome === "error") {
+            queueMicrotask(() => reject(window.__downloadError));
+          } else {
+            queueMicrotask(resolve);
+          }
+        });
+      };
+    }
 
     const originalAnchorClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function click() {
@@ -136,7 +149,7 @@ async function mountScript(page, {
       }
       originalAnchorClick.call(this);
     };
-  }, { downloadOutcome, downloadError, requestOutcome });
+  }, { downloadAvailable, downloadOutcome, downloadError, requestOutcome });
 
   await page.addScriptTag({ path: SCRIPT_PATH });
   await expect(page.locator(BUTTON_SELECTOR)).toBeVisible();
@@ -151,6 +164,10 @@ async function clickAndGetDownload(page) {
 test("reuses the production site slot without adding a fourth flex child", async ({ page }) => {
   await mountScript(page);
 
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.styles.length)).toBe(1);
+  await expect(page.locator("head style").evaluate((style) => style.textContent)).resolves.toContain(
+    BUTTON_SELECTOR,
+  );
   await expect(page.locator(".du-player-controls > div")).toHaveCount(3);
   await expect(page.locator('[data-control="site-slot"]')).toHaveClass(new RegExp(`\\b${SLOT_CLASS}\\b`));
   await expect(page.locator('[data-control="site-slot"] > ' + BUTTON_SELECTOR)).toHaveCount(1);
@@ -184,7 +201,7 @@ test("removes its class but not a site-owned slot during cleanup", async ({ page
 });
 
 for (const [name, downloadError] of [
-  ["legacy user_canceled", { error: "user_canceled" }],
+  ["lowercase user_canceled", { error: "user_canceled" }],
   ["generic canceled", { error: "CANCELED" }],
   ["string USER_CANCELED", "USER_CANCELED"],
   ["string details", { error: "not_succeeded", details: "user_canceled" }],
@@ -203,13 +220,30 @@ for (const [name, downloadError] of [
   });
 }
 
-test("falls back once after an ordinary GM_download failure", async ({ page }) => {
+test("falls back once after an ordinary GM.download failure", async ({ page }) => {
   await mountScript(page, {
     downloadOutcome: "error",
     downloadError: { error: "not_whitelisted" },
   });
 
   await page.locator(BUTTON_SELECTOR).click();
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.anchorDownloads.length)).toBe(1);
+  await expect(page.evaluate(() => window.__gmCalls.requests[0])).resolves.toEqual({
+    method: "GET",
+    url: DEFAULT_AUDIO_URL,
+    responseType: "blob",
+    timeout: 60000,
+    accept: "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
+  });
+  await expect(page.locator(BUTTON_SELECTOR)).toBeEnabled();
+});
+
+test("falls back when GM.download is unavailable", async ({ page }) => {
+  await mountScript(page, { downloadAvailable: false });
+
+  await page.locator(BUTTON_SELECTOR).click();
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.downloads.length)).toBe(0);
   await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
   await expect.poll(() => page.evaluate(() => window.__gmCalls.anchorDownloads.length)).toBe(1);
   await expect(page.locator(BUTTON_SELECTOR)).toBeEnabled();
@@ -303,7 +337,7 @@ test("moves busy state to a replacement player during navigation", async ({ page
   await expect(page.locator('[data-replacement="true"] ' + BUTTON_SELECTOR)).toBeDisabled();
   await expect(page.locator(BUTTON_SELECTOR)).toHaveCount(1);
 
-  await page.evaluate(() => window.__pendingDownload.onload());
+  await page.evaluate(() => window.__pendingDownload.resolve());
   await expect(page.locator('[data-replacement="true"] ' + BUTTON_SELECTOR)).toBeEnabled();
 });
 
@@ -336,7 +370,7 @@ for (const [kind, expectedMessage] of [
   ["empty", "Audio request returned an empty file."],
   ["html", "Audio request returned unsupported content type: text/html; charset=utf-8."],
 ]) {
-  test(`rejects a ${kind} XHR fallback response`, async ({ page }) => {
+  test(`rejects a ${kind} GM.xmlHttpRequest fallback response`, async ({ page }) => {
     await mountScript(page, {
       downloadOutcome: "error",
       downloadError: { error: "not_whitelisted" },
@@ -358,6 +392,22 @@ test("accepts application/octet-stream fallback responses", async ({ page }) => 
 
   await page.locator(BUTTON_SELECTOR).click();
   await expect.poll(() => page.evaluate(() => window.__gmCalls.anchorDownloads.length)).toBe(1);
+});
+
+test("handles a rejected GM.xmlHttpRequest Promise", async ({ page }) => {
+  await mountScript(page, {
+    downloadOutcome: "error",
+    downloadError: { error: "not_whitelisted" },
+    requestOutcome: { kind: "network-error" },
+  });
+
+  await page.locator(BUTTON_SELECTOR).click();
+  await expect(page.locator("#duchinese-audio-downloader-toast")).toHaveText(
+    "Audio download failed. See the console for details.",
+  );
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.anchorDownloads.length)).toBe(0);
+  await expect(page.locator(BUTTON_SELECTOR)).toBeEnabled();
 });
 
 test("accepts fallback responses without a MIME type", async ({ page }) => {

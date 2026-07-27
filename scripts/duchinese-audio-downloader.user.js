@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Du Chinese & Yomu Yomu Audio Downloader
 // @namespace    https://duchinese.net/
-// @version      0.4.0
+// @version      0.4.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @description  Adds an audio download button beside the Du Chinese and Yomu Yomu lesson players.
@@ -11,9 +11,9 @@
 // @match        https://yomuyomu.app/lessons/*
 // @match        https://www.yomuyomu.app/lessons/*
 // @run-at       document-idle
-// @grant        GM_addStyle
-// @grant        GM_download
-// @grant        GM_xmlhttpRequest
+// @grant        GM.addStyle
+// @grant        GM.download
+// @grant        GM.xmlHttpRequest
 // @connect      duchinese.net
 // @connect      yomuyomu.app
 // ==/UserScript==
@@ -131,8 +131,8 @@
   let isDownloadActive = false;
 
   function addStyle() {
-    if (typeof GM_addStyle === "function") {
-      GM_addStyle(css);
+    if (typeof GM !== "undefined" && typeof GM.addStyle === "function") {
+      GM.addStyle(css);
       return;
     }
 
@@ -377,87 +377,60 @@
         throw error;
       }
 
-      console.warn(SCRIPT_PREFIX, "GM_download failed; retrying with GM_xmlhttpRequest.", error);
+      console.warn(SCRIPT_PREFIX, "GM.download failed; retrying with GM.xmlHttpRequest.", error);
       await downloadViaRequest(url, filename);
       return "request";
     }
   }
 
-  function downloadViaGm(url, filename) {
-    if (typeof GM_download !== "function") {
-      return Promise.reject(new Error("GM_download is unavailable."));
+  async function downloadViaGm(url, filename) {
+    if (typeof GM === "undefined" || typeof GM.download !== "function") {
+      throw new Error("GM.download is unavailable.");
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        GM_download({
-          url,
-          name: filename,
-          saveAs: false,
-          onload: resolve,
-          onerror: (error) => reject(error || new Error("GM_download failed.")),
-          ontimeout: () => reject(new Error("GM_download timed out.")),
-        });
-      } catch (error) {
-        reject(error);
-      }
+    await GM.download({
+      url,
+      name: filename,
+      saveAs: false,
     });
   }
 
-  function downloadViaRequest(url, filename) {
-    if (typeof GM_xmlhttpRequest !== "function") {
-      return Promise.reject(new Error("GM_xmlhttpRequest is unavailable."));
+  async function downloadViaRequest(url, filename) {
+    if (typeof GM === "undefined" || typeof GM.xmlHttpRequest !== "function") {
+      throw new Error("GM.xmlHttpRequest is unavailable.");
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        GM_xmlhttpRequest({
-          method: "GET",
-          url,
-          responseType: "blob",
-          timeout: REQUEST_TIMEOUT_MS,
-          headers: {
-            Accept: "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
-          },
-          onload: (response) => {
-            if (response.status < 200 || response.status >= 300) {
-              reject(userError(`Audio request failed with HTTP ${response.status}.`));
-              return;
-            }
-
-            try {
-              if (response.response == null) {
-                reject(userError("Audio request returned no data."));
-                return;
-              }
-
-              const contentType = getResponseContentType(response);
-              const blob = response.response instanceof Blob
-                ? response.response
-                : new Blob([response.response], { type: contentType || "audio/mpeg" });
-              if (blob.size === 0) {
-                reject(userError("Audio request returned an empty file."));
-                return;
-              }
-
-              if (!isSupportedAudioContentType(contentType)) {
-                reject(userError(`Audio request returned unsupported content type: ${contentType}.`));
-                return;
-              }
-
-              triggerBlobDownload(blob, filename);
-              resolve();
-            } catch (error) {
-              reject(error);
-            }
-          },
-          onerror: (error) => reject(error || new Error("Audio request failed.")),
-          ontimeout: () => reject(new Error("Audio request timed out.")),
-        });
-      } catch (error) {
-        reject(error);
-      }
+    const response = await GM.xmlHttpRequest({
+      method: "GET",
+      url,
+      responseType: "blob",
+      timeout: REQUEST_TIMEOUT_MS,
+      headers: {
+        Accept: "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
+      },
     });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw userError(`Audio request failed with HTTP ${response.status}.`);
+    }
+
+    if (response.response == null) {
+      throw userError("Audio request returned no data.");
+    }
+
+    const contentType = getResponseContentType(response);
+    const blob = response.response instanceof Blob
+      ? response.response
+      : new Blob([response.response], { type: contentType || "audio/mpeg" });
+    if (blob.size === 0) {
+      throw userError("Audio request returned an empty file.");
+    }
+
+    if (!isSupportedAudioContentType(contentType)) {
+      throw userError(`Audio request returned unsupported content type: ${contentType}.`);
+    }
+
+    triggerBlobDownload(blob, filename);
   }
 
   function getResponseContentType(response) {
