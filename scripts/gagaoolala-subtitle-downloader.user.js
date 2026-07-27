@@ -1,17 +1,18 @@
 // ==UserScript==
 // @name         GagaOOLala Subtitle Downloader
 // @namespace    https://www.gagaoolala.com/
-// @version      0.1.2
+// @version      0.1.3
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for GagaOOLala subtitle tracks.
 // @author       CaoCao
 // @match        https://www.gagaoolala.com/*/videos/*
 // @run-at       document-start
-// @grant        GM_addStyle
-// @grant        GM_download
-// @grant        GM_xmlhttpRequest
-// @grant        GM_registerMenuCommand
+// @grant        GM.addStyle
+// @grant        GM.download
+// @grant        GM.xmlHttpRequest
+// @grant        GM.registerMenuCommand
+// @grant        window.onurlchange
 // @connect      www.gagaoolala.com
 // @connect      *
 // ==/UserScript==
@@ -28,7 +29,6 @@
   const BUTTON_CLASS = "gagaoolala-subtitle-downloader-button";
   const TITLE_CLASS = "gagaoolala-subtitle-downloader-title";
   const STATUS_CLASS = "gagaoolala-subtitle-downloader-status";
-  const ROUTE_CHECK_INTERVAL_MS = 800;
   const REFRESH_DELAY_MS = 100;
   const PLAY_ENDPOINT_PATTERN = /\/api\/v1\.0\/[^/]+\/videos\/[^/]+\/[^/?#]+\/play(?:[?#]|$)/;
   const LANGUAGE_BY_CODE = {
@@ -201,7 +201,6 @@
   let panel = null;
   let toastTimer = 0;
   let refreshTimer = 0;
-  let lastHref = "";
   let lastSignature = "";
   let lastState = null;
   let hasStarted = false;
@@ -284,14 +283,7 @@
   }
 
   function addStyle() {
-    if (typeof GM_addStyle === "function") {
-      GM_addStyle(css);
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.textContent = css;
-    getMountRoot().appendChild(style);
+    GM.addStyle(css);
   }
 
   function getMountRoot() {
@@ -432,30 +424,11 @@
       throw new Error("No raw subtitle URL is available.");
     }
 
-    if (typeof GM_download === "function") {
-      await new Promise((resolve, reject) => {
-        try {
-          GM_download({
-            url: track.url,
-            name: filename,
-            saveAs: false,
-            onload: resolve,
-            onerror: reject,
-            ontimeout: reject,
-          });
-        } catch (error) {
-          reject(error);
-        }
-      });
-      return;
-    }
-
-    const response = await fetch(track.url, { credentials: "include" });
-    if (!response.ok) {
-      throw new Error(`Raw subtitle request failed with HTTP ${response.status}`);
-    }
-
-    saveBlob(await response.blob(), filename);
+    await GM.download({
+      url: track.url,
+      name: filename,
+      saveAs: false,
+    });
   }
 
   function saveBlob(blob, filename) {
@@ -1173,80 +1146,34 @@
     }
   }
 
-  function requestText(url) {
-    if (typeof GM_xmlhttpRequest === "function") {
-      return new Promise((resolve, reject) => {
-        try {
-          GM_xmlhttpRequest({
-            method: "GET",
-            url,
-            responseType: "text",
-            headers: {
-              Accept: "text/vtt,application/vnd.apple.mpegurl,application/dash+xml,text/plain,*/*;q=0.8",
-            },
-            onload: (response) => {
-              if (response.status < 200 || response.status >= 300) {
-                reject(new Error(`Request failed with HTTP ${response.status}: ${url}`));
-                return;
-              }
-
-              resolve(String(response.responseText || response.response || ""));
-            },
-            onerror: reject,
-            ontimeout: reject,
-          });
-        } catch (error) {
-          reject(error);
-        }
-      });
-    }
-
-    return fetch(url, {
-      credentials: "include",
+  async function requestText(url) {
+    const response = await GM.xmlHttpRequest({
+      method: "GET",
+      url,
       headers: {
         Accept: "text/vtt,application/vnd.apple.mpegurl,application/dash+xml,text/plain,*/*;q=0.8",
       },
-    }).then((response) => {
-      if (!response.ok) {
-        throw new Error(`Request failed with HTTP ${response.status}: ${url}`);
-      }
-
-      return response.text();
     });
-  }
 
-  function requestBlob(url) {
-    if (typeof GM_xmlhttpRequest === "function") {
-      return new Promise((resolve, reject) => {
-        try {
-          GM_xmlhttpRequest({
-            method: "GET",
-            url,
-            responseType: "blob",
-            onload: (response) => {
-              if (response.status < 200 || response.status >= 300) {
-                reject(new Error(`Request failed with HTTP ${response.status}: ${url}`));
-                return;
-              }
-
-              resolve(response.response);
-            },
-            onerror: reject,
-            ontimeout: reject,
-          });
-        } catch (error) {
-          reject(error);
-        }
-      });
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Request failed with HTTP ${response.status}: ${url}`);
     }
 
-    return fetch(url, { credentials: "include" }).then((response) => {
-      if (!response.ok) {
-        throw new Error(`Request failed with HTTP ${response.status}: ${url}`);
-      }
+    return String(response.responseText || response.response || "");
+  }
 
-      return response.blob();
+  async function requestBlob(url) {
+    const response = await GM.xmlHttpRequest({
+      method: "GET",
+      url,
+      responseType: "blob",
     });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Request failed with HTTP ${response.status}: ${url}`);
+    }
+
+    return response.response;
   }
 
   function buildFilename(state, track, extension = "srt") {
@@ -1295,34 +1222,9 @@
   }
 
   function observeNavigation() {
-    window.addEventListener("popstate", () => scheduleRefresh(0), { passive: true });
-    window.addEventListener("hashchange", () => scheduleRefresh(0), { passive: true });
+    window.addEventListener("urlchange", () => scheduleRefresh(0));
     document.addEventListener("pointerdown", onDocumentPointerDown, true);
     document.addEventListener("keydown", onDocumentKeyDown, true);
-
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function pushState(...args) {
-      const result = originalPushState.apply(this, args);
-      scheduleRefresh(0);
-      return result;
-    };
-
-    history.replaceState = function replaceState(...args) {
-      const result = originalReplaceState.apply(this, args);
-      scheduleRefresh(0);
-      return result;
-    };
-
-    window.setInterval(() => {
-      if (window.location.href === lastHref) {
-        return;
-      }
-
-      lastHref = window.location.href;
-      scheduleRefresh(0);
-    }, ROUTE_CHECK_INTERVAL_MS);
   }
 
   function togglePanel() {
@@ -1375,16 +1277,16 @@
   }
 
   function installMenuCommands() {
-    if (menuCommandsInstalled || typeof GM_registerMenuCommand !== "function") {
+    if (menuCommandsInstalled) {
       return;
     }
 
     menuCommandsInstalled = true;
-    GM_registerMenuCommand("Refresh subtitle panel", () => {
+    GM.registerMenuCommand("Refresh subtitle panel", () => {
       refreshFromPage();
       showPanel();
     });
-    GM_registerMenuCommand("Log subtitle debug info", logDebugInfo);
+    GM.registerMenuCommand("Log subtitle debug info", logDebugInfo);
   }
 
   function logDebugInfo() {
@@ -1467,7 +1369,6 @@
     installMenuCommands();
     installDebugHandle();
     showLoadingPanel();
-    lastHref = window.location.href;
     refreshFromPage();
     observeNavigation();
   }

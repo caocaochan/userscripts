@@ -1,17 +1,18 @@
 // ==UserScript==
 // @name         Missevan Subtitle Styler
 // @namespace    https://www.missevan.com/
-// @version      0.1.9
+// @version      0.1.10
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @description  Adds readable, customizable subtitle styling controls to Missevan sound player pages.
 // @author       CaoCao
 // @match        https://www.missevan.com/sound/player*
 // @run-at       document-idle
-// @grant        GM_addStyle
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_registerMenuCommand
+// @grant        GM.addStyle
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.registerMenuCommand
+// @grant        window.onurlchange
 // ==/UserScript==
 
 (() => {
@@ -24,7 +25,6 @@
   const ENHANCED_CLASS = "missevan-subtitle-styler-enhanced";
   const COLOR_OVERRIDE_CLASS = "missevan-subtitle-styler-color-override";
   const HIDDEN_CLASS = "missevan-subtitle-styler-hidden";
-  const ROUTE_CHECK_INTERVAL_MS = 800;
   const REBIND_DELAY_MS = 80;
   const FONT_FALLBACK = "sans-serif";
   const MAX_FONT_FAMILY_LENGTH = 240;
@@ -404,7 +404,8 @@
     }
   `;
 
-  let settings = readSettings();
+  let settings = { ...DEFAULT_SETTINGS };
+  let settingsWriteQueue = Promise.resolve();
   let launcher = null;
   let panel = null;
   let subtitleContainer = null;
@@ -412,14 +413,20 @@
   let bodyObserver = null;
   let rebindTimer = 0;
   let isPanelOpen = false;
-  let lastHref = window.location.href;
   let menuCommandsInstalled = false;
   let installedFontOptions = [];
   let isLoadingInstalledFonts = false;
   let fontRequestId = 0;
 
-  function readSettings() {
-    const rawValue = getStoredValue(STORAGE_KEY, null);
+  async function readSettings() {
+    let rawValue;
+    try {
+      rawValue = await GM.getValue(STORAGE_KEY, null);
+    } catch (error) {
+      console.warn("[Missevan Subtitle Styler] Could not read saved settings.", error);
+      return { ...DEFAULT_SETTINGS };
+    }
+
     if (!rawValue) {
       return { ...DEFAULT_SETTINGS };
     }
@@ -447,53 +454,18 @@
     return next;
   }
 
-  function getStoredValue(key, fallbackValue) {
-    try {
-      if (typeof GM_getValue === "function") {
-        return GM_getValue(key, fallbackValue);
-      }
-    } catch (error) {
-      console.warn("[Missevan Subtitle Styler]", error);
-    }
-
-    try {
-      const rawValue = window.localStorage.getItem(key);
-      return rawValue == null ? fallbackValue : rawValue;
-    } catch {
-      return fallbackValue;
-    }
-  }
-
-  function setStoredValue(key, value) {
-    try {
-      if (typeof GM_setValue === "function") {
-        GM_setValue(key, value);
-        return;
-      }
-    } catch (error) {
-      console.warn("[Missevan Subtitle Styler]", error);
-    }
-
-    try {
-      window.localStorage.setItem(key, value);
-    } catch (error) {
-      console.warn("[Missevan Subtitle Styler]", error);
-    }
-  }
-
   function saveSettings() {
-    setStoredValue(STORAGE_KEY, JSON.stringify(settings));
+    const snapshot = { ...settings };
+    settingsWriteQueue = settingsWriteQueue
+      .then(() => GM.setValue(STORAGE_KEY, snapshot))
+      .catch((error) => {
+        console.warn("[Missevan Subtitle Styler] Could not save settings.", error);
+      });
+    return settingsWriteQueue;
   }
 
   function addStyle() {
-    if (typeof GM_addStyle === "function") {
-      GM_addStyle(css);
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.textContent = css;
-    getMountRoot().appendChild(style);
+    GM.addStyle(css);
   }
 
   function getMountRoot() {
@@ -1210,34 +1182,9 @@
   }
 
   function observeNavigation() {
-    window.addEventListener("popstate", () => scheduleRebind(0), { passive: true });
-    window.addEventListener("hashchange", () => scheduleRebind(0), { passive: true });
+    window.addEventListener("urlchange", () => scheduleRebind(0));
     document.addEventListener("pointerdown", onDocumentPointerDown, true);
     document.addEventListener("keydown", onDocumentKeyDown, true);
-
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function pushState(...args) {
-      const result = originalPushState.apply(this, args);
-      scheduleRebind(0);
-      return result;
-    };
-
-    history.replaceState = function replaceState(...args) {
-      const result = originalReplaceState.apply(this, args);
-      scheduleRebind(0);
-      return result;
-    };
-
-    window.setInterval(() => {
-      if (window.location.href === lastHref) {
-        return;
-      }
-
-      lastHref = window.location.href;
-      scheduleRebind(0);
-    }, ROUTE_CHECK_INTERVAL_MS);
   }
 
   function onDocumentPointerDown(event) {
@@ -1262,13 +1209,13 @@
   }
 
   function installMenuCommands() {
-    if (menuCommandsInstalled || typeof GM_registerMenuCommand !== "function") {
+    if (menuCommandsInstalled) {
       return;
     }
 
     menuCommandsInstalled = true;
-    GM_registerMenuCommand("Open subtitle style settings", showPanel);
-    GM_registerMenuCommand("Reset subtitle style settings", resetSettings);
+    GM.registerMenuCommand("Open subtitle style settings", showPanel);
+    GM.registerMenuCommand("Reset subtitle style settings", resetSettings);
   }
 
   function installDebugHandle() {
@@ -1298,12 +1245,17 @@
     return Math.min(max, Math.max(min, number));
   }
 
-  function start() {
+  async function start() {
     if (!document.body) {
-      window.setTimeout(start, 50);
+      window.setTimeout(() => {
+        void start().catch((error) => {
+          console.error("[Missevan Subtitle Styler] Could not start.", error);
+        });
+      }, 50);
       return;
     }
 
+    settings = await readSettings();
     addStyle();
     ensureLauncher();
     ensurePanel();
@@ -1316,9 +1268,15 @@
     observeNavigation();
   }
 
+  function startSafely() {
+    void start().catch((error) => {
+      console.error("[Missevan Subtitle Styler] Could not start.", error);
+    });
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start, { once: true });
+    document.addEventListener("DOMContentLoaded", startSafely, { once: true });
   } else {
-    start();
+    startSafely();
   }
 })();

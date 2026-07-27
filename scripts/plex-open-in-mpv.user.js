@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.3.3
+// @version      0.3.4
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @description  Adds Open in mpv controls to local Plex detail pages and Home/library media cards.
@@ -10,7 +10,8 @@
 // @match        http://127.0.0.1:32400/web/index.html*
 // @match        http://localhost:32400/web/index.html*
 // @run-at       document-idle
-// @grant        GM_addStyle
+// @grant        GM.addStyle
+// @grant        window.onurlchange
 // ==/UserScript==
 
 (() => {
@@ -156,21 +157,13 @@
 
   let button = null;
   let toastTimer = 0;
-  let lastHref = "";
   let currentRatingKey = null;
   let isLoading = false;
   let lastPlayButton = null;
   let uiRefreshTimer = 0;
 
   function addStyle() {
-    if (typeof GM_addStyle === "function") {
-      GM_addStyle(css);
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.textContent = css;
-    document.documentElement.appendChild(style);
+    GM.addStyle(css);
   }
 
   function ensureButton() {
@@ -1193,18 +1186,8 @@
   }
 
   function observeNavigation() {
-    window.addEventListener("hashchange", () => scheduleUiRefresh(), { passive: true });
-    window.addEventListener("popstate", () => scheduleUiRefresh(), { passive: true });
-
-    window.setInterval(() => {
-      if (window.location.href === lastHref) {
-        scanCardsForButtons();
-        return;
-      }
-
-      lastHref = window.location.href;
-      scheduleUiRefresh(0);
-    }, CARD_SCAN_INTERVAL_MS);
+    window.addEventListener("urlchange", () => scheduleUiRefresh(0));
+    window.setInterval(scanCardsForButtons, CARD_SCAN_INTERVAL_MS);
 
     new MutationObserver((mutations) => {
       if (mutations.every(isOwnUiMutation)) {
@@ -1246,7 +1229,6 @@
   function start() {
     addStyle();
     ensureButton();
-    lastHref = window.location.href;
     refreshUi();
     observeNavigation();
   }

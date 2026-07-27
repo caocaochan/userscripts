@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Yatsu Simplified Chinese
 // @namespace    https://app.yatsu.moe/
-// @version      0.1.3
+// @version      0.1.4
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @description  Converts Yatsu Reader book content from Traditional Chinese to Simplified Chinese with OpenCC.
@@ -9,10 +9,11 @@
 // @match        https://app.yatsu.moe/*
 // @run-at       document-idle
 // @require      https://cdn.jsdelivr.net/npm/opencc-js@latest/dist/umd/full.js
-// @grant        GM_addStyle
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_registerMenuCommand
+// @grant        GM.addStyle
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.registerMenuCommand
+// @grant        window.onurlchange
 // ==/UserScript==
 
 (() => {
@@ -48,7 +49,6 @@
   ].join(",");
   const CONTENT_SELECTOR = ".book-content";
   const FALLBACK_CONTENT_SELECTOR = ".book-content-container";
-  const ROUTE_CHECK_INTERVAL_MS = 800;
   const APPLY_DELAY_MS = 80;
   const OPENCC_WAIT_TIMEOUT_MS = 12000;
   const DEFAULT_SETTINGS = {
@@ -173,14 +173,13 @@
     }
   `;
 
-  let settings = readSettings();
+  let settings = { ...DEFAULT_SETTINGS };
+  let settingsWriteQueue = Promise.resolve();
   let converter = null;
   let launcher = null;
   let panel = null;
   let observer = null;
-  let routeTimer = 0;
   let applyTimer = 0;
-  let lastHref = window.location.href;
   let isPanelOpen = false;
   let isApplying = false;
   let menuCommandsInstalled = false;
@@ -188,8 +187,15 @@
   const originalTextByNode = new WeakMap();
   const convertedTextByNode = new WeakMap();
 
-  function readSettings() {
-    const rawValue = getStoredValue(STORAGE_KEY, null);
+  async function readSettings() {
+    let rawValue;
+    try {
+      rawValue = await GM.getValue(STORAGE_KEY, null);
+    } catch (error) {
+      console.warn("[Yatsu Simplified Chinese] Could not read saved settings.", error);
+      return { ...DEFAULT_SETTINGS };
+    }
+
     if (!rawValue) {
       return { ...DEFAULT_SETTINGS };
     }
@@ -209,53 +215,18 @@
     return next;
   }
 
-  function getStoredValue(key, fallbackValue) {
-    try {
-      if (typeof GM_getValue === "function") {
-        return GM_getValue(key, fallbackValue);
-      }
-    } catch (error) {
-      console.warn("[Yatsu Simplified Chinese]", error);
-    }
-
-    try {
-      const rawValue = window.localStorage.getItem(key);
-      return rawValue == null ? fallbackValue : rawValue;
-    } catch {
-      return fallbackValue;
-    }
-  }
-
-  function setStoredValue(key, value) {
-    try {
-      if (typeof GM_setValue === "function") {
-        GM_setValue(key, value);
-        return;
-      }
-    } catch (error) {
-      console.warn("[Yatsu Simplified Chinese]", error);
-    }
-
-    try {
-      window.localStorage.setItem(key, value);
-    } catch (error) {
-      console.warn("[Yatsu Simplified Chinese]", error);
-    }
-  }
-
   function saveSettings() {
-    setStoredValue(STORAGE_KEY, JSON.stringify(settings));
+    const snapshot = { ...settings };
+    settingsWriteQueue = settingsWriteQueue
+      .then(() => GM.setValue(STORAGE_KEY, snapshot))
+      .catch((error) => {
+        console.warn("[Yatsu Simplified Chinese] Could not save settings.", error);
+      });
+    return settingsWriteQueue;
   }
 
   function addStyle() {
-    if (typeof GM_addStyle === "function") {
-      GM_addStyle(css);
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.textContent = css;
-    getMountRoot().appendChild(style);
+    GM.addStyle(css);
   }
 
   function getMountRoot() {
@@ -620,34 +591,9 @@
   }
 
   function observeNavigation() {
-    window.addEventListener("popstate", () => scheduleApply(0), { passive: true });
-    window.addEventListener("hashchange", () => scheduleApply(0), { passive: true });
+    window.addEventListener("urlchange", () => scheduleApply(0));
     document.addEventListener("pointerdown", onDocumentPointerDown, true);
     document.addEventListener("keydown", onDocumentKeyDown, true);
-
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function pushState(...args) {
-      const result = originalPushState.apply(this, args);
-      scheduleApply(0);
-      return result;
-    };
-
-    history.replaceState = function replaceState(...args) {
-      const result = originalReplaceState.apply(this, args);
-      scheduleApply(0);
-      return result;
-    };
-
-    routeTimer = window.setInterval(() => {
-      if (window.location.href === lastHref) {
-        return;
-      }
-
-      lastHref = window.location.href;
-      scheduleApply(0);
-    }, ROUTE_CHECK_INTERVAL_MS);
   }
 
   function onDocumentPointerDown(event) {
@@ -672,14 +618,14 @@
   }
 
   function installMenuCommands() {
-    if (menuCommandsInstalled || typeof GM_registerMenuCommand !== "function") {
+    if (menuCommandsInstalled) {
       return;
     }
 
     menuCommandsInstalled = true;
-    GM_registerMenuCommand("Toggle Yatsu Chinese conversion", () => setEnabled(!settings.enabled));
-    GM_registerMenuCommand("Force reconvert current book content", forceReconvert);
-    GM_registerMenuCommand("Reset Yatsu Simplified Chinese settings", resetSettings);
+    GM.registerMenuCommand("Toggle Yatsu Chinese conversion", () => setEnabled(!settings.enabled));
+    GM.registerMenuCommand("Force reconvert current book content", forceReconvert);
+    GM.registerMenuCommand("Reset Yatsu Simplified Chinese settings", resetSettings);
   }
 
   function installDebugHandle() {
@@ -698,7 +644,7 @@
         hasConverter: Boolean(converter),
         contentRoots: getContentRoots().length,
         convertedTextNodes: lastConvertedCount,
-        routeTimerActive: Boolean(routeTimer),
+        urlChangeListenerActive: true,
       }),
     };
   }
@@ -719,10 +665,15 @@
 
   async function start() {
     if (!document.body) {
-      window.setTimeout(start, 50);
+      window.setTimeout(() => {
+        void start().catch((error) => {
+          console.error("[Yatsu Simplified Chinese] Could not start.", error);
+        });
+      }, 50);
       return;
     }
 
+    settings = await readSettings();
     addStyle();
     ensureLauncher();
     ensurePanel();
@@ -742,9 +693,15 @@
     }
   }
 
+  function startSafely() {
+    void start().catch((error) => {
+      console.error("[Yatsu Simplified Chinese] Could not start.", error);
+    });
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start, { once: true });
+    document.addEventListener("DOMContentLoaded", startSafely, { once: true });
   } else {
-    start();
+    startSafely();
   }
 })();

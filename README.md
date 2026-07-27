@@ -4,7 +4,7 @@ Collection of my userscripts.
 
 ## Install
 
-Userscripts in this repo can be installed directly from the raw file URL in a userscript manager such as Tampermonkey.
+Userscripts in this repo can be installed directly from the raw file URL. They target current Tampermonkey 5.3 or newer; compatibility with other userscript managers is not maintained.
 
 ## Scripts
 

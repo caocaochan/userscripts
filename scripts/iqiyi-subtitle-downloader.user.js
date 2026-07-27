@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         iQIYI Subtitle Downloader
 // @namespace    https://www.iq.com/
-// @version      0.1.3
+// @version      0.1.4
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for subtitles on iQ.com and iQIYI.com episode pages.
@@ -10,13 +10,12 @@
 // @match        https://iq.com/play/*
 // @match        https://www.iqiyi.com/v_*.html*
 // @match        https://iqiyi.com/v_*.html*
-// @include      /^https:\/\/(?:www\.)?iq\.com\/play\/.*$/
-// @include      /^https:\/\/(?:www\.)?iqiyi\.com\/v_[^/?#]+\.html(?:[?#].*)?$/
 // @run-at       document-idle
-// @grant        GM_addStyle
-// @grant        GM_download
-// @grant        GM_xmlhttpRequest
-// @grant        GM_registerMenuCommand
+// @grant        GM.addStyle
+// @grant        GM.download
+// @grant        GM.xmlHttpRequest
+// @grant        GM.registerMenuCommand
+// @grant        window.onurlchange
 // @connect      meta.video.iqiyi.com
 // @connect      www.iq.com
 // @connect      iq.com
@@ -38,7 +37,6 @@
   const TITLE_CLASS = "iqiyi-subtitle-downloader-title";
   const STATUS_CLASS = "iqiyi-subtitle-downloader-status";
   const SRT_BASE_URL = "https://meta.video.iqiyi.com";
-  const ROUTE_CHECK_INTERVAL_MS = 800;
   const FETCH_STALE_DELAY_MS = 350;
   const IQIYI_RUNTIME_RETRY_MS = 500;
   const IQIYI_RUNTIME_MAX_RETRIES = 20;
@@ -197,7 +195,6 @@
   let launcher = null;
   let panel = null;
   let toastTimer = 0;
-  let lastHref = "";
   let lastSignature = "";
   let lastState = null;
   let refreshTimer = 0;
@@ -213,14 +210,7 @@
   console.info("[iQIYI Subtitle Downloader] started", window.location.href);
 
   function addStyle() {
-    if (typeof GM_addStyle === "function") {
-      GM_addStyle(css);
-      return;
-    }
-
-    const style = document.createElement("style");
-    style.textContent = css;
-    getMountRoot().appendChild(style);
+    GM.addStyle(css);
   }
 
   function getMountRoot() {
@@ -345,69 +335,30 @@
     }
   }
 
-  function downloadSubtitle(url, filename) {
-    if (typeof GM_download === "function") {
-      return new Promise((resolve, reject) => {
-        try {
-          GM_download({
-            url,
-            name: filename,
-            saveAs: false,
-            onload: resolve,
-            onerror: reject,
-            ontimeout: reject,
-          });
-        } catch (error) {
-          reject(error);
-        }
-      }).catch(() => downloadViaRequest(url, filename));
+  async function downloadSubtitle(url, filename) {
+    try {
+      await GM.download({
+        url,
+        name: filename,
+        saveAs: false,
+      });
+    } catch {
+      await downloadViaRequest(url, filename);
     }
-
-    return downloadViaRequest(url, filename);
   }
 
-  function downloadViaRequest(url, filename) {
-    if (typeof GM_xmlhttpRequest !== "function") {
-      return downloadViaFetch(url, filename);
-    }
-
-    return new Promise((resolve, reject) => {
-      try {
-        GM_xmlhttpRequest({
-          method: "GET",
-          url,
-          responseType: "blob",
-          onload: (response) => {
-            if (response.status < 200 || response.status >= 300) {
-              reject(new Error(`Subtitle request failed with HTTP ${response.status}`));
-              return;
-            }
-
-            saveBlob(response.response, filename);
-            resolve();
-          },
-          onerror: reject,
-          ontimeout: reject,
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  async function downloadViaFetch(url, filename) {
-    const response = await fetch(url, {
-      credentials: "omit",
-      headers: {
-        Accept: "application/x-subrip,text/plain,*/*;q=0.8",
-      },
+  async function downloadViaRequest(url, filename) {
+    const response = await GM.xmlHttpRequest({
+      method: "GET",
+      url,
+      responseType: "blob",
     });
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(`Subtitle request failed with HTTP ${response.status}`);
     }
 
-    saveBlob(await response.blob(), filename);
+    saveBlob(response.response, filename);
   }
 
   function saveBlob(blob, filename) {
@@ -788,34 +739,9 @@
   }
 
   function observeNavigation() {
-    window.addEventListener("popstate", () => scheduleRefresh(0), { passive: true });
-    window.addEventListener("hashchange", () => scheduleRefresh(0), { passive: true });
+    window.addEventListener("urlchange", () => scheduleRefresh(0));
     document.addEventListener("pointerdown", onDocumentPointerDown, true);
     document.addEventListener("keydown", onDocumentKeyDown, true);
-
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function pushState(...args) {
-      const result = originalPushState.apply(this, args);
-      scheduleRefresh(0);
-      return result;
-    };
-
-    history.replaceState = function replaceState(...args) {
-      const result = originalReplaceState.apply(this, args);
-      scheduleRefresh(0);
-      return result;
-    };
-
-    window.setInterval(() => {
-      if (window.location.href === lastHref) {
-        return;
-      }
-
-      lastHref = window.location.href;
-      scheduleRefresh(0);
-    }, ROUTE_CHECK_INTERVAL_MS);
   }
 
   function togglePanel() {
@@ -868,16 +794,16 @@
   }
 
   function installMenuCommands() {
-    if (menuCommandsInstalled || typeof GM_registerMenuCommand !== "function") {
+    if (menuCommandsInstalled) {
       return;
     }
 
     menuCommandsInstalled = true;
-    GM_registerMenuCommand("Refresh subtitle panel", () => {
+    GM.registerMenuCommand("Refresh subtitle panel", () => {
       refreshFromDocument();
       showPanel();
     });
-    GM_registerMenuCommand("Log subtitle debug info", logDebugInfo);
+    GM.registerMenuCommand("Log subtitle debug info", logDebugInfo);
   }
 
   function logDebugInfo() {
@@ -958,7 +884,6 @@
     installMenuCommands();
     installDebugHandle();
     showLoadingPanel();
-    lastHref = window.location.href;
     refreshFromDocument();
     observeNavigation();
   }

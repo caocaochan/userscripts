@@ -1,17 +1,17 @@
 // ==UserScript==
 // @name         Nyaa Group Hider + Highlighter
 // @namespace    https://nyaa.si/
-// @version      0.2.1
+// @version      0.2.2
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @description  Hide or highlight Nyaa torrent rows from configured release groups.
 // @author       CaoCao
 // @match        https://nyaa.si/*
 // @run-at       document-idle
-// @grant        GM_addStyle
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_registerMenuCommand
+// @grant        GM.addStyle
+// @grant        GM.getValues
+// @grant        GM.setValue
+// @grant        GM.registerMenuCommand
 // ==/UserScript==
 
 (() => {
@@ -39,11 +39,12 @@
   const HIGHLIGHTED_ADD_BUTTON_ID = "nyaa-group-hider-highlighted-add";
   const STYLE_ID = "nyaa-group-hider-style";
 
-  let hiddenGroups = normalizeGroups(readStoredGroups(HIDDEN_STORAGE_KEY, DEFAULT_HIDDEN_GROUPS));
-  let highlightedGroups = normalizeGroups(readStoredGroups(HIGHLIGHTED_STORAGE_KEY, DEFAULT_HIGHLIGHTED_GROUPS));
+  let hiddenGroups = normalizeGroups(DEFAULT_HIDDEN_GROUPS);
+  let highlightedGroups = normalizeGroups(DEFAULT_HIGHLIGHTED_GROUPS);
   let hiddenCount = 0;
   let highlightedCount = 0;
   let showHiddenRows = false;
+  const storageWriteQueues = new Map();
 
   const css = `
     .${HIDDEN_CLASS} {
@@ -195,46 +196,40 @@
     }
   `;
 
-  function readStoredGroups(storageKey, defaultGroups) {
-    const fallbackGroups = defaultGroups.slice();
-
+  async function readStoredGroups() {
     try {
-      if (typeof GM_getValue === "function") {
-        return GM_getValue(storageKey, fallbackGroups);
-      }
+      const values = await GM.getValues({
+        [HIDDEN_STORAGE_KEY]: DEFAULT_HIDDEN_GROUPS,
+        [HIGHLIGHTED_STORAGE_KEY]: DEFAULT_HIGHLIGHTED_GROUPS,
+      });
+      return {
+        hidden: normalizeGroups(values[HIDDEN_STORAGE_KEY]),
+        highlighted: normalizeGroups(values[HIGHLIGHTED_STORAGE_KEY]),
+      };
     } catch (error) {
-      console.warn("[Nyaa Group Hider]", error);
-    }
-
-    try {
-      const rawValue = window.localStorage.getItem(storageKey);
-      return rawValue ? JSON.parse(rawValue) : fallbackGroups;
-    } catch (error) {
-      console.warn("[Nyaa Group Hider]", error);
-      return fallbackGroups;
+      console.warn("[Nyaa Group Hider] Could not read saved groups.", error);
+      return {
+        hidden: normalizeGroups(DEFAULT_HIDDEN_GROUPS),
+        highlighted: normalizeGroups(DEFAULT_HIGHLIGHTED_GROUPS),
+      };
     }
   }
 
   function writeStoredGroups(storageKey, groups) {
     const nextGroups = normalizeGroups(groups);
-
-    try {
-      if (typeof GM_setValue === "function") {
-        GM_setValue(storageKey, nextGroups);
-      } else {
-        window.localStorage.setItem(storageKey, JSON.stringify(nextGroups));
-      }
-    } catch (error) {
-      console.warn("[Nyaa Group Hider]", error);
-
-      try {
-        window.localStorage.setItem(storageKey, JSON.stringify(nextGroups));
-      } catch (storageError) {
-        console.warn("[Nyaa Group Hider]", storageError);
-      }
-    }
-
+    persistStoredGroups(storageKey, nextGroups);
     return nextGroups;
+  }
+
+  function persistStoredGroups(storageKey, groups) {
+    const snapshot = groups.slice();
+    const writeQueue = (storageWriteQueues.get(storageKey) || Promise.resolve())
+      .then(() => GM.setValue(storageKey, snapshot))
+      .catch((error) => {
+        console.warn(`[Nyaa Group Hider] Could not save ${storageKey}.`, error);
+      });
+    storageWriteQueues.set(storageKey, writeQueue);
+    return writeQueue;
   }
 
   function setHiddenGroups(groups) {
@@ -455,38 +450,28 @@
     applyGroupRules();
   }
 
-  function registerMenuCommand(name, handler) {
-    try {
-      if (typeof GM_registerMenuCommand === "function") {
-        GM_registerMenuCommand(name, handler);
-      }
-    } catch (error) {
-      console.warn("[Nyaa Group Hider]", error);
-    }
-  }
-
   function registerMenuCommands() {
-    registerMenuCommand("Edit hidden groups", promptForHiddenGroups);
+    GM.registerMenuCommand("Edit hidden groups", promptForHiddenGroups);
 
-    registerMenuCommand("Show hidden groups", () => {
+    GM.registerMenuCommand("Show hidden groups", () => {
       const groupList = hiddenGroups.length ? hiddenGroups.join("\n") : "(none)";
       window.alert(`Nyaa Group Hider + Highlighter\n\nHidden rows on this page: ${hiddenCount}\n\nHidden groups:\n${groupList}`);
     });
 
-    registerMenuCommand("Reset hidden groups", () => {
+    GM.registerMenuCommand("Reset hidden groups", () => {
       setHiddenGroups(DEFAULT_HIDDEN_GROUPS);
       showHiddenRows = false;
       applyGroupRules();
     });
 
-    registerMenuCommand("Edit highlighted groups", promptForHighlightedGroups);
+    GM.registerMenuCommand("Edit highlighted groups", promptForHighlightedGroups);
 
-    registerMenuCommand("Show highlighted groups", () => {
+    GM.registerMenuCommand("Show highlighted groups", () => {
       const groupList = highlightedGroups.length ? highlightedGroups.join("\n") : "(none)";
       window.alert(`Nyaa Group Hider + Highlighter\n\nHighlighted rows on this page: ${highlightedCount}\n\nHighlighted groups:\n${groupList}`);
     });
 
-    registerMenuCommand("Reset highlighted groups", () => {
+    GM.registerMenuCommand("Reset highlighted groups", () => {
       setHighlightedGroups(DEFAULT_HIGHLIGHTED_GROUPS);
       applyGroupRules();
     });
@@ -497,33 +482,30 @@
       return;
     }
 
-    try {
-      if (typeof GM_addStyle === "function") {
-        const styleElement = GM_addStyle(css);
-        if (styleElement && !styleElement.id) {
-          styleElement.id = STYLE_ID;
-        }
-        return;
-      }
-    } catch (error) {
-      console.warn("[Nyaa Group Hider]", error);
+    const styleElement = GM.addStyle(css);
+    if (styleElement && !styleElement.id) {
+      styleElement.id = STYLE_ID;
     }
-
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = css;
-    document.head.appendChild(style);
   }
 
-  function start() {
+  async function start() {
+    const storedGroups = await readStoredGroups();
+    hiddenGroups = storedGroups.hidden;
+    highlightedGroups = storedGroups.highlighted;
     addStyles();
     registerMenuCommands();
     applyGroupRules();
   }
 
+  function startSafely() {
+    void start().catch((error) => {
+      console.error("[Nyaa Group Hider] Could not start.", error);
+    });
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start, { once: true });
+    document.addEventListener("DOMContentLoaded", startSafely, { once: true });
   } else {
-    start();
+    startSafely();
   }
 })();
