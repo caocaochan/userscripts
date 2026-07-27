@@ -52,13 +52,11 @@ const SCRIPT_CONFIG = {
   },
   "yatsu-simplified-chinese.user.js": {
     grants: [
-      "GM.addStyle",
       "GM.getValue",
       "GM.setValue",
       "GM.registerMenuCommand",
-      "window.onurlchange",
     ],
-    spa: true,
+    spa: false,
   },
 };
 
@@ -231,26 +229,33 @@ test("Nyaa batches its initial storage read before applying both group lists", a
   ]);
 });
 
-test("Yatsu reads legacy JSON settings and writes the migrated object form", async ({ page }) => {
-  await page.setContent('<div class="book-content">傳統內容</div>');
+test("Yatsu converts existing and dynamically added text while skipping editable content", async ({ page }) => {
+  await page.setContent(`
+    <title>傳統標題</title>
+    <main>傳統內容</main>
+    <input value="傳統輸入">
+    <code>傳統程式</code>
+  `);
   await page.evaluate(() => {
     window.__gmCalls = { getValue: [], setValue: [], menus: [] };
     window.OpenCC = {
       Converter() {
-        return (text) => text.replaceAll("傳統內容", "传统内容");
+        return (text) => text
+          .replaceAll("傳統", "传统")
+          .replaceAll("標題", "标题")
+          .replaceAll("內容", "内容")
+          .replaceAll("動態", "动态")
+          .replaceAll("程式", "程序");
+      },
+      CustomConverter() {
+        return (text) => text;
       },
     };
     window.GM = {
-      addStyle(css) {
-        const style = document.createElement("style");
-        style.textContent = css;
-        document.head.appendChild(style);
-        return style;
-      },
       async getValue(key, fallbackValue) {
         window.__gmCalls.getValue.push({ key, fallbackValue });
         await new Promise((resolve) => window.setTimeout(resolve, 20));
-        return JSON.stringify({ enabled: false });
+        return true;
       },
       async setValue(key, value) {
         window.__gmCalls.setValue.push({ key, value });
@@ -263,16 +268,19 @@ test("Yatsu reads legacy JSON settings and writes the migrated object form", asy
   });
 
   await page.addScriptTag({ path: scriptPath("yatsu-simplified-chinese.user.js") });
-  await expect(page.locator("#yatsu-simplified-chinese-launcher")).toHaveAttribute("data-enabled", "false");
-  await page.locator('[data-setting-key="enabled"]').evaluate((input) => {
-    input.checked = true;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await expect.poll(() => page.locator("main").textContent()).toBe("传统内容");
+  await expect.poll(() => page.title()).toBe("传统标题");
+  await expect(page.locator("input")).toHaveValue("傳統輸入");
+  await expect(page.locator("code")).toHaveText("傳統程式");
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.getValue)).toEqual([
+    { key: "yatsu-t2s-enabled", fallbackValue: true },
+  ]);
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.menus.length)).toBe(1);
 
-  await expect.poll(() => page.evaluate(() => window.__gmCalls.setValue.at(-1)?.value.enabled)).toBe(true);
-  await expect.poll(() => page.evaluate(() => typeof window.__gmCalls.setValue.at(-1)?.value)).toBe("object");
-  await expect.poll(() => page.locator(".book-content").textContent()).toBe("传统内容");
-  await expect.poll(
-    () => page.evaluate(() => window.yatsuSimplifiedChineseDebug.status().urlChangeListenerActive),
-  ).toBe(true);
+  await page.locator("main").evaluate((main) => {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = "動態內容";
+    main.appendChild(paragraph);
+  });
+  await expect.poll(() => page.locator("p").textContent()).toBe("动态内容");
 });

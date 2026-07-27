@@ -28,5 +28,5 @@ Userscripts in this repo can be installed directly from the raw file URL. They t
 - **GagaOOLala Subtitle Downloader**
   Adds a floating subtitles panel to `https://www.gagaoolala.com/*/videos/*` video pages and downloads available WebVTT subtitle tracks as `.srt` files. GagaOOLala exposes playback subtitle manifests only to logged-in sessions, so sign in first before refreshing the panel or starting playback.
 
-- **Yatsu Simplified Chinese**
-  Adds a small conversion toggle to `https://app.yatsu.moe/*` reader pages and converts Yatsu book content from Traditional Chinese to Simplified Chinese with OpenCC, leaving the app interface untouched.
+- **Yatsu Reader — Traditional to Simplified Chinese**
+  Converts Traditional Chinese text throughout `https://app.yatsu.moe/*`, including dynamically added content and the page title, to Simplified characters with OpenCC. Conversion is character-based rather than vocabulary-localized and can be toggled from Tampermonkey's userscript menu.
