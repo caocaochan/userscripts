@@ -1,8 +1,13 @@
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test, expect } = require("playwright/test");
 
 const SCRIPTS_DIR = path.resolve(__dirname, "../scripts");
+const OPENCC_UMD_PATH = path.resolve(
+  __dirname,
+  "../node_modules/opencc-js/dist/umd/t2cn.js",
+);
 const SCRIPT_CONFIG = {
   "gagaoolala-subtitle-downloader.user.js": {
     grants: [
@@ -82,12 +87,17 @@ test("all in-scope scripts use their exact modern Tampermonkey grants", () => {
 
 test("Yatsu uses the DOM sandbox and an integrity-pinned OpenCC 1.4.1 bundle", () => {
   const source = readScript("yatsu-simplified-chinese.user.js");
-  expect(source).toContain("// @version      1.2.1");
+  const openCCSource = fs.readFileSync(OPENCC_UMD_PATH);
+  const openCCDigest = crypto.createHash("sha256").update(openCCSource).digest("base64");
+  const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf8"));
+
+  expect(source).toContain("// @version      1.2.2");
   expect(source).toContain("// @sandbox      DOM");
   expect(source).toContain(
     "// @require      https://cdn.jsdelivr.net/npm/opencc-js@1.4.1/dist/umd/t2cn.js"
-      + "#sha256-cnj6Y5j1mnkHXndo208qeMqyKFQXA6HVkAIsGeIzQZ8=",
+      + `#sha256-${openCCDigest}`,
   );
+  expect(packageJson.devDependencies["opencc-js"]).toBe("1.4.1");
   expect(source).not.toMatch(/^\/\/ @run-in\b/m);
   expect(source).not.toContain("window.onurlchange");
 });
@@ -348,6 +358,187 @@ test("Yatsu awaits its setting, registers a descriptive menu, and converts eligi
     main.appendChild(paragraph);
   });
   await expect.poll(() => page.locator("p").textContent()).toBe("动态内容");
+});
+
+test("Yatsu preserves phrase context across inline and ruby markup with the pinned OpenCC bundle", async ({ page }) => {
+  await page.setContent(
+    '<title>傳統標題</title>'
+      + '<main>'
+      + '<p id="inline"><span>乾</span><span>隆</span> <span>著</span><span>名</span> '
+      + '<span>看</span><span>著</span></p>'
+      + '<p id="ruby"><ruby><span class="ruby-base">乾</span><rt>ㄍㄢ</rt></ruby>'
+      + '<span class="ruby-base">隆</span></p>'
+      + '<p id="standalone-dry">乾</p><p id="standalone-long">隆</p>'
+      + '<p id="zhe-cases">著於竹帛 著式 著志 著白 鉅著 鴻篇鉅著 趁著 接著</p>'
+      + '<input id="attributes" value="傳統輸入" placeholder="傳統提示" '
+      + 'aria-label="傳統標籤" title="傳統標題">'
+      + '</main>',
+  );
+  await page.addScriptTag({ path: OPENCC_UMD_PATH });
+  await page.evaluate(() => {
+    window.GM = {
+      async getValue() {
+        return true;
+      },
+      async setValue() {},
+      registerMenuCommand() {
+        return "menu-id";
+      },
+    };
+  });
+
+  await page.addScriptTag({ path: scriptPath("yatsu-simplified-chinese.user.js") });
+
+  await expect.poll(() => page.locator("#inline").textContent()).toBe("乾隆 著名 看着");
+  await expect.poll(
+    () => page.locator("#ruby .ruby-base").allTextContents(),
+  ).toEqual(["乾", "隆"]);
+  await expect(page.locator("#ruby rt")).toHaveText("ㄍㄢ");
+  await expect(page.locator("#standalone-dry")).toHaveText("干");
+  await expect(page.locator("#standalone-long")).toHaveText("隆");
+  await expect(page.locator("#zhe-cases")).toHaveText(
+    "著于竹帛 著式 著志 著白 钜著 鸿篇钜著 趁着 接着",
+  );
+  await expect.poll(() => page.title()).toBe("传统标题");
+  await expect(page.locator("#attributes")).toHaveValue("傳統輸入");
+  await expect(page.locator("#attributes")).toHaveAttribute("placeholder", "傳統提示");
+  await expect(page.locator("#attributes")).toHaveAttribute("aria-label", "傳統標籤");
+  await expect(page.locator("#attributes")).toHaveAttribute("title", "傳統標題");
+});
+
+test("Yatsu recomputes dynamic inline runs and rejects dynamically added excluded subtrees", async ({ page }) => {
+  await page.setContent('<main><p id="late-phrase"><span id="dry">乾</span></p></main>');
+  await page.addScriptTag({ path: OPENCC_UMD_PATH });
+  await page.evaluate(() => {
+    window.GM = {
+      async getValue() {
+        return true;
+      },
+      async setValue() {},
+      registerMenuCommand() {
+        return "menu-id";
+      },
+    };
+  });
+  await page.addScriptTag({ path: scriptPath("yatsu-simplified-chinese.user.js") });
+  await expect(page.locator("#dry")).toHaveText("干");
+
+  await page.evaluate(() => {
+    const long = document.createElement("span");
+    long.id = "long";
+    long.textContent = "隆";
+    document.querySelector("#late-phrase").appendChild(long);
+
+    const code = document.createElement("code");
+    code.id = "dynamic-code";
+    code.innerHTML = '<span id="nested-code">傳統程式</span>';
+    document.body.appendChild(code);
+    document.querySelector("#nested-code").firstChild.nodeValue = "動態程式";
+
+    const editable = document.createElement("div");
+    editable.id = "dynamic-editable";
+    editable.contentEditable = "true";
+    editable.textContent = "傳統編輯";
+    document.body.appendChild(editable);
+  });
+
+  await expect.poll(() => page.locator("#late-phrase").textContent()).toBe("乾隆");
+  await expect(page.locator("#dynamic-code")).toHaveText("動態程式");
+  await expect(page.locator("#dynamic-editable")).toHaveText("傳統編輯");
+});
+
+test("Yatsu converts and observes existing and dynamically added open shadow roots", async ({ page }) => {
+  await page.setContent('<main><div id="existing-host"></div></main>');
+  await page.addScriptTag({ path: OPENCC_UMD_PATH });
+  await page.evaluate(() => {
+    document.querySelector("#existing-host").attachShadow({ mode: "open" }).innerHTML =
+      '<p id="existing-shadow-text">傳統內容</p>';
+    window.GM = {
+      async getValue() {
+        return true;
+      },
+      async setValue() {},
+      registerMenuCommand() {
+        return "menu-id";
+      },
+    };
+  });
+  await page.addScriptTag({ path: scriptPath("yatsu-simplified-chinese.user.js") });
+
+  await expect.poll(
+    () => page.evaluate(() => document.querySelector("#existing-host").shadowRoot.textContent),
+  ).toBe("传统内容");
+
+  await page.evaluate(() => {
+    const existingRoot = document.querySelector("#existing-host").shadowRoot;
+    existingRoot.querySelector("#existing-shadow-text").textContent = "動態內容";
+    const added = document.createElement("p");
+    added.id = "added-shadow-text";
+    added.textContent = "新增陰影";
+    existingRoot.appendChild(added);
+
+    const lateHost = document.createElement("div");
+    lateHost.id = "late-host";
+    lateHost.attachShadow({ mode: "open" }).innerHTML =
+      '<p id="late-shadow-text">傳統陰影</p>';
+    document.querySelector("main").appendChild(lateHost);
+  });
+
+  await expect.poll(
+    () => page.evaluate(() => document.querySelector("#existing-host").shadowRoot.textContent),
+  ).toBe("动态内容新增阴影");
+  await expect.poll(
+    () => page.evaluate(() => document.querySelector("#late-host").shadowRoot.textContent),
+  ).toBe("传统阴影");
+
+  await page.evaluate(() => {
+    document.querySelector("#late-host").shadowRoot.querySelector("p").textContent = "動態陰影";
+  });
+  await expect.poll(
+    () => page.evaluate(() => document.querySelector("#late-host").shadowRoot.textContent),
+  ).toBe("动态阴影");
+});
+
+test("Yatsu safely falls back when conversion changes code-point count without observer feedback", async ({ page }) => {
+  const warnings = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning") warnings.push(message.text());
+  });
+  await page.setContent('<p id="length-change"><span id="first">傳</span><span id="second">統</span></p>');
+  await page.evaluate(() => {
+    window.__converterCalls = 0;
+    window.OpenCC = {
+      Converter() {
+        return (text) => {
+          window.__converterCalls += 1;
+          if (text === "傳統") return "传统额";
+          return text.replaceAll("傳", "传").replaceAll("統", "统");
+        };
+      },
+      CustomConverter() {
+        return (text) => text;
+      },
+    };
+    window.GM = {
+      async getValue() {
+        return true;
+      },
+      async setValue() {},
+      registerMenuCommand() {
+        return "menu-id";
+      },
+    };
+  });
+
+  await page.addScriptTag({ path: scriptPath("yatsu-simplified-chinese.user.js") });
+  await expect(page.locator("#first")).toHaveText("传");
+  await expect(page.locator("#second")).toHaveText("统");
+  await expect.poll(() => warnings).toEqual([
+    expect.stringContaining("falling back to independent text-node conversion"),
+  ]);
+  await expect.poll(() => page.evaluate(() => window.__converterCalls)).toBe(3);
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => window.__converterCalls)).toBe(3);
 });
 
 test("disabled Yatsu registers its enable command without starting conversion", async ({ page }) => {
