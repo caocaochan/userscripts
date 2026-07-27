@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Yatsu Reader — Traditional to Simplified Chinese
 // @namespace    https://app.yatsu.moe/
-// @version      1.2.2
+// @version      1.2.3
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @description  Converts Traditional Chinese text on app.yatsu.moe to Simplified orthography using OpenCC without regional vocabulary localization.
@@ -51,29 +51,72 @@
     // Orthographic conversion: 裡→里, 說→说, but keeps original vocabulary.
     const convert = openCC.Converter({ from: 't', to: 'cn' });
 
-    // OpenCC leaves 著 alone unless a phrase-dict entry matches, because 著 is
-    // also valid simplified (著名, 著作). That misses common aspect-particle
-    // uses (趁著, 看著, 接著…). Post-process: identity-protect the zhù words
-    // (longest match wins in CustomConverter), convert every other 著 → 着.
-    const fixZhe = openCC.CustomConverter([
-      ['著作', '著作'], ['著名', '著名'], ['著称', '著称'], ['著述', '著述'],
-      ['著者', '著者'], ['著书', '著书'], ['著录', '著录'], ['著有', '著有'],
-      ['名著', '名著'], ['原著', '原著'], ['巨著', '巨著'], ['专著', '专著'],
-      ['论著', '论著'], ['编著', '编著'], ['译著', '译著'], ['合著', '合著'],
-      ['拙著', '拙著'], ['遗著', '遗著'], ['显著', '显著'], ['昭著', '昭著'],
-      ['卓著', '卓著'], ['土著', '土著'],
-      ['著式', '著式'], ['著志', '著志'], ['著于', '著于'], ['著白', '著白'],
-      ['钜著', '钜著'],
-      ['著', '着'],
-    ]);
-
-    // Preserve 鉅著 as 钜著 before OpenCC normalizes 鉅 to 巨; doing this after
-    // the main conversion could not distinguish 鉅著 from an original 巨著.
-    const preserveZheBeforeConversion = openCC.CustomConverter([
+    // Apply unambiguous Taiwan-to-Mainland orthographic variants without
+    // enabling OpenCC's regional vocabulary localization. 鉅著 intentionally
+    // keeps its direct simplified form instead of being normalized to 巨著.
+    const preNormalize = openCC.CustomConverter([
       ['鉅著', '钜著'],
+      ['么', '幺'],
+      ['潀', '潨'],
+      ['痺', '痹'],
+      ['睪', '睾'],
+      ['簷', '檐'],
     ]);
 
-    const convertText = (text) => fixZhe(convert(preserveZheBeforeConversion(text)));
+    const ZHU_LEXEMES = [
+      '著作', '著名', '著稱', '著述', '著者', '著書', '著錄', '著有',
+      '著式', '著志', '著白', '著效', '著績', '著聞', '著成', '著文',
+      '名著', '原著', '巨著', '钜著', '專著', '論著', '編著', '譯著',
+      '合著', '拙著', '遺著', '顯著', '昭著', '卓著', '土著', '新著',
+      '舊著', '近著',
+    ];
+
+    let wordSegmenter = null;
+    try {
+      if (typeof globalThis.Intl?.Segmenter === 'function') {
+        wordSegmenter = new globalThis.Intl.Segmenter('zh-Hans', { granularity: 'word' });
+      }
+    } catch {
+      // The warning below also covers an implementation that exposes but
+      // cannot construct Intl.Segmenter.
+    }
+
+    if (!wordSegmenter) {
+      console.warn(
+        `${LOG_PREFIX} Intl.Segmenter is unavailable; leaving ambiguous 著 unchanged.`
+      );
+    }
+
+    function normalizeZheSegment(segment) {
+      if (segment === '著' || !segment.includes('著')) return segment;
+
+      const protectedOffsets = new Set();
+      for (const lexeme of ZHU_LEXEMES) {
+        let lexemeOffset = segment.indexOf(lexeme);
+        while (lexemeOffset !== -1) {
+          for (let index = 0; index < lexeme.length; index += 1) {
+            if (lexeme[index] === '著') protectedOffsets.add(lexemeOffset + index);
+          }
+          lexemeOffset = segment.indexOf(lexeme, lexemeOffset + 1);
+        }
+      }
+
+      return segment.replace(/著/g, (match, offset) => (
+        protectedOffsets.has(offset) ? match : '着'
+      ));
+    }
+
+    function normalizeZheByWord(text) {
+      if (!wordSegmenter || !text.includes('著')) return text;
+
+      let normalized = '';
+      for (const { segment } of wordSegmenter.segment(text)) {
+        normalized += normalizeZheSegment(segment);
+      }
+      return normalized;
+    }
+
+    const convertText = (text) => convert(normalizeZheByWord(preNormalize(text)));
 
     const HAN_RE = /\p{Script=Han}/u;
     const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'CODE']);

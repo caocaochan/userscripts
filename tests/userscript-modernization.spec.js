@@ -91,7 +91,7 @@ test("Yatsu uses the DOM sandbox and an integrity-pinned OpenCC 1.4.1 bundle", (
   const openCCDigest = crypto.createHash("sha256").update(openCCSource).digest("base64");
   const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf8"));
 
-  expect(source).toContain("// @version      1.2.2");
+  expect(source).toContain("// @version      1.2.3");
   expect(source).toContain("// @sandbox      DOM");
   expect(source).toContain(
     "// @require      https://cdn.jsdelivr.net/npm/opencc-js@1.4.1/dist/umd/t2cn.js"
@@ -347,10 +347,14 @@ test("Yatsu awaits its setting, registers a descriptive menu, and converts eligi
   await expect.poll(
     () => page.evaluate(() => window.__gmCalls.customConverter[0]),
   ).toEqual(expect.arrayContaining([
-    ["著作", "著作"],
-    ["著名", "著名"],
-    ["著", "着"],
+    ["鉅著", "钜著"],
+    ["么", "幺"],
+    ["潀", "潨"],
+    ["痺", "痹"],
+    ["睪", "睾"],
+    ["簷", "檐"],
   ]));
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.customConverter.length)).toBe(1);
 
   await page.locator("main").evaluate((main) => {
     const paragraph = document.createElement("p");
@@ -404,6 +408,138 @@ test("Yatsu preserves phrase context across inline and ruby markup with the pinn
   await expect(page.locator("#attributes")).toHaveAttribute("placeholder", "傳統提示");
   await expect(page.locator("#attributes")).toHaveAttribute("aria-label", "傳統標籤");
   await expect(page.locator("#attributes")).toHaveAttribute("title", "傳統標題");
+});
+
+test("Yatsu disambiguates 著 by word without crossing lexical boundaries", async ({ page }) => {
+  const cases = [
+    ["拿著書看", "拿着书看"],
+    ["看著名字", "看着名字"],
+    ["聽著名曲", "听着名曲"],
+    ["看著錄像", "看着录像"],
+    ["接著有請", "接着有请"],
+    ["看著有點奇怪", "看着有点奇怪"],
+    ["附著於表面", "附着于表面"],
+    ["執著於理想", "执着于理想"],
+    ["穿著白衣", "穿着白衣"],
+    ["身著白色襯衫", "身着白色衬衫"],
+    ["衣著式樣", "衣着式样"],
+    ["藉著機會", "借着机会"],
+    ["憑藉著經驗", "凭借着经验"],
+    ["著名", "著名"],
+    ["著作", "著作"],
+    ["著者", "著者"],
+    ["著書立說", "著书立说"],
+    ["著錄", "著录"],
+    ["著稱", "著称"],
+    ["著述", "著述"],
+    ["著有", "著有"],
+    ["名著", "名著"],
+    ["原著", "原著"],
+    ["巨著", "巨著"],
+    ["鉅著", "钜著"],
+    ["專著", "专著"],
+    ["論著", "论著"],
+    ["編著", "编著"],
+    ["譯著", "译著"],
+    ["合著", "合著"],
+    ["拙著", "拙著"],
+    ["遺著", "遗著"],
+    ["顯著", "显著"],
+    ["昭著", "昭著"],
+    ["卓著", "卓著"],
+    ["土著", "土著"],
+    ["新著", "新著"],
+    ["舊著", "旧著"],
+    ["近著", "近著"],
+    ["魯迅著《吶喊》", "鲁迅著《呐喊》"],
+    ["著成此書", "著成此书"],
+    ["著文立說", "著文立说"],
+    ["著於竹帛", "著于竹帛"],
+    ["看著作", "看著作"],
+    ["拿著作業", "拿着作业"],
+    ["著名作家", "著名作家"],
+    ["看著名人", "看着名人"],
+    ["作者著書", "作者著书"],
+    ["拿著書", "拿着书"],
+    ["他微笑著說", "他微笑著说"],
+    ["么妹", "幺妹"],
+    ["麻痺", "麻痹"],
+    ["睪丸", "睾丸"],
+    ["屋簷", "屋檐"],
+    ["潀", "潨"],
+  ];
+
+  await page.setContent(
+    `<main>${cases.map(([source], index) => (
+      `<p data-case="${index}">${source}</p>`
+    )).join("")}</main>`,
+  );
+  await page.addScriptTag({ path: OPENCC_UMD_PATH });
+  await page.evaluate(() => {
+    window.GM = {
+      async getValue() {
+        return true;
+      },
+      async setValue() {},
+      registerMenuCommand() {
+        return "menu-id";
+      },
+    };
+  });
+
+  await page.addScriptTag({ path: scriptPath("yatsu-simplified-chinese.user.js") });
+
+  await expect.poll(
+    () => page.locator("[data-case]").allTextContents(),
+  ).toEqual(cases.map(([, expected]) => expected));
+});
+
+test("Yatsu conservatively leaves 著 unchanged when Intl.Segmenter is unavailable", async ({ page }) => {
+  const warnings = [];
+  const pageErrors = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning" && message.text().includes("[Yatsu Reader T2S]")) {
+      warnings.push(message.text());
+    }
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.setContent('<main><p id="static-fallback">看著傳統內容</p></main>');
+  await page.addScriptTag({ path: OPENCC_UMD_PATH });
+  await page.evaluate(() => {
+    Object.defineProperty(Intl, "Segmenter", {
+      value: undefined,
+      configurable: true,
+    });
+    window.GM = {
+      async getValue() {
+        return true;
+      },
+      async setValue() {},
+      registerMenuCommand() {
+        return "menu-id";
+      },
+    };
+  });
+
+  await page.addScriptTag({ path: scriptPath("yatsu-simplified-chinese.user.js") });
+
+  await expect.poll(() => page.locator("#static-fallback").textContent()).toBe("看著传统内容");
+  await expect.poll(() => warnings).toEqual([
+    expect.stringContaining("Intl.Segmenter is unavailable; leaving ambiguous 著 unchanged."),
+  ]);
+  expect(pageErrors).toEqual([]);
+
+  await page.locator("main").evaluate((main) => {
+    const paragraph = document.createElement("p");
+    paragraph.id = "dynamic-fallback";
+    paragraph.textContent = "接著傳統內容";
+    main.appendChild(paragraph);
+  });
+  await expect.poll(() => page.locator("#dynamic-fallback").textContent()).toBe("接著传统内容");
+  await page.waitForTimeout(50);
+  expect(warnings).toHaveLength(1);
+  expect(pageErrors).toEqual([]);
 });
 
 test("Yatsu recomputes dynamic inline runs and rejects dynamically added excluded subtrees", async ({ page }) => {

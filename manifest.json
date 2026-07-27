@@ -92,7 +92,7 @@
     {
       "id": "yatsu-simplified-chinese",
       "name": "Yatsu Reader — Traditional to Simplified Chinese",
-      "description": "Converts Traditional Chinese text throughout Yatsu Reader to Simplified characters with OpenCC, without vocabulary localization.",
+      "description": "Converts Traditional Chinese text throughout Yatsu Reader to Simplified orthography with OpenCC, without vocabulary localization.",
       "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js",
       "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/yatsu-simplified-chinese.user.js",
       "tags": [
