@@ -5,7 +5,7 @@
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @description  Converts Traditional Chinese text on app.yatsu.moe to Simplified characters using OpenCC (characters only, no vocabulary localization).
-// @author       claude.ai.prjr7@passmail.net
+// @author       CaoCao
 // @match        https://app.yatsu.moe/*
 // @require      https://cdn.jsdelivr.net/npm/opencc-js@1.4.1/dist/umd/t2cn.js#sha256-cnj6Y5j1mnkHXndo208qeMqyKFQXA6HVkAIsGeIzQZ8=
 // @grant        GM.getValue
