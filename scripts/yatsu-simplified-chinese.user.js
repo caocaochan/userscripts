@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Yatsu Reader — Traditional to Simplified Chinese
 // @namespace    https://app.yatsu.moe/
-// @version      1.2.0
+// @version      1.2.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @description  Converts Traditional Chinese text on app.yatsu.moe to Simplified characters using OpenCC (characters only, no vocabulary localization).

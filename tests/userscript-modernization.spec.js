@@ -82,7 +82,7 @@ test("all in-scope scripts use their exact modern Tampermonkey grants", () => {
 
 test("Yatsu uses the DOM sandbox and an integrity-pinned OpenCC 1.4.1 bundle", () => {
   const source = readScript("yatsu-simplified-chinese.user.js");
-  expect(source).toContain("// @version      1.2.0");
+  expect(source).toContain("// @version      1.2.1");
   expect(source).toContain("// @sandbox      DOM");
   expect(source).toContain(
     "// @require      https://cdn.jsdelivr.net/npm/opencc-js@1.4.1/dist/umd/t2cn.js"
