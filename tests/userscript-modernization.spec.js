@@ -8,6 +8,14 @@ const OPENCC_UMD_PATH = path.resolve(
   "../node_modules/opencc-js/dist/umd/t2cn.js",
 );
 const SCRIPT_CONFIG = {
+  "anilist-english-titles.user.js": {
+    grants: [
+      "GM.addStyle",
+      "GM.xmlHttpRequest",
+      "window.onurlchange",
+    ],
+    spa: true,
+  },
   "gagaoolala-subtitle-downloader.user.js": {
     grants: [
       "GM.addStyle",
@@ -98,6 +106,25 @@ test("Yatsu uses the DOM sandbox and the latest optimized OpenCC bundle", () => 
   expect(packageJson.devDependencies["opencc-js"]).toBe("latest");
   expect(source).not.toMatch(/^\/\/ @run-in\b/m);
   expect(source).not.toContain("window.onurlchange");
+});
+
+test("AniList uses the modern DOM sandbox and Promise-based request API", () => {
+  const source = readScript("anilist-english-titles.user.js");
+
+  expect(source).toContain("// @version      0.1.0");
+  expect(source).toContain("// @sandbox      DOM");
+  expect(source).toContain("// @run-at       document-start");
+  expect(source).toContain("// @connect      graphql.anilist.co");
+  expect(source).toContain("// @noframes");
+  expect(source).not.toMatch(/^\/\/ @run-in\b/m);
+  expect(source).toMatch(/request\s*=\s*GM\.xmlHttpRequest\(\{/);
+  expect(source).toMatch(/const response = await request;/);
+  expect(source).toContain("request.abort()");
+  expect(source).toContain("responseType: \"json\"");
+  expect(source).toContain("anonymous: true");
+  expect(source).toContain("fetch: true");
+  expect(source).toContain("redirect: \"error\"");
+  expect(source).not.toMatch(/^\s+(?:onload|onerror|ontimeout):/m);
 });
 
 test("the modernization scope excludes DuChinese", () => {

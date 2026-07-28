@@ -3,6 +3,21 @@
   "repoUrl": "https://github.com/caocaochan/userscripts",
   "scripts": [
     {
+      "id": "anilist-english-titles",
+      "name": "English Titles for AniList",
+      "description": "Adds English titles beneath anime titles on AniList user lists, with romaji fallback.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/anilist-english-titles.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/anilist-english-titles.user.js",
+      "tags": [
+        "tampermonkey",
+        "anilist",
+        "anime",
+        "titles",
+        "english",
+        "romaji"
+      ]
+    },
+    {
       "id": "duchinese-audio-downloader",
       "name": "Du Chinese & Yomu Yomu Audio Downloader",
       "description": "Adds an MP3 download control beside the Du Chinese and Yomu Yomu lesson players.",

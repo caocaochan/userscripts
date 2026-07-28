@@ -8,6 +8,9 @@ Userscripts in this repo can be installed directly from the raw file URL. They t
 
 ## Scripts
 
+- **English Titles for AniList**
+  Adds a smaller second title line beneath anime titles on every AniList user anime-list page, across table, compact, and card layouts. It prefers AniList's official English title, falls back to romaji when English is unavailable, and suppresses equivalent duplicates. The script uses one anonymous, read-only AniList API request per visited username, caches results only for the current page lifetime, and stores nothing persistently. It uses modern Promise-based Tampermonkey APIs and is compatible with the repository's Tampermonkey 5.3+ target while being authored against current Tampermonkey 5.6.x.
+
 - **Du Chinese & Yomu Yomu Audio Downloader**
   Runs on `https://duchinese.net/lessons/*` and `https://yomuyomu.app/lessons/*` pages and adds a download icon beside the fixed play control. Both sites share the same lesson player, so one script covers them. Downloads use the audio URL already supplied to the lesson player. Standalone lessons are named from the lesson title; course audio adds a sortable chapter suffix such as `Chapter 01`.
 
