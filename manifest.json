@@ -64,7 +64,7 @@
     {
       "id": "jjwxc-reader-theme",
       "name": "JJWXC Reader — LXGW WenKai + Solarized Light",
-      "description": "Applies LXGW WenKai Screen to JJWXC chapter prose and themes desktop chapter pages with Solarized Light.",
+      "description": "Formats JJWXC chapter prose at 20px with LXGW WenKai Screen and themes desktop chapter pages with Solarized Light.",
       "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/jjwxc-reader-theme.user.js",
       "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/jjwxc-reader-theme.user.js",
       "tags": [

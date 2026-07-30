@@ -31,7 +31,7 @@ const MANIFEST_ENTRY = {
   id: "jjwxc-reader-theme",
   name: "JJWXC Reader — LXGW WenKai + Solarized Light",
   description:
-    "Applies LXGW WenKai Screen to JJWXC chapter prose and themes desktop chapter pages with Solarized Light.",
+    "Formats JJWXC chapter prose at 20px with LXGW WenKai Screen and themes desktop chapter pages with Solarized Light.",
   installUrl:
     "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/jjwxc-reader-theme.user.js",
   sourceUrl:
@@ -75,12 +75,18 @@ const SITE_CSS = `
   }
 
   .noveltext {
+    font-size: 16px;
+    line-height: 1.8;
     font-family:
       "Microsoft YaHei",
       PingFangSC-Regular,
       HelveticaNeue-Light,
       "Helvetica Neue Light",
       sans-serif !important;
+  }
+
+  .noveltext h2 {
+    font-size: 16px;
   }
 
   .noveltitle {
@@ -185,7 +191,7 @@ async function loadFixture(page) {
 }
 
 test("metadata and manifest expose the JJWXC reader theme", () => {
-  expect(SCRIPT_SOURCE).toContain("// @version      0.1.0");
+  expect(SCRIPT_SOURCE).toContain("// @version      0.1.1");
   expect(SCRIPT_SOURCE).toContain("// @match        https://www.jjwxc.net/onebook.php*");
   expect(SCRIPT_SOURCE).toContain("// @tag          jjwxc");
   expect(SCRIPT_SOURCE).toContain("// @tag          font");
@@ -277,6 +283,8 @@ test("wins over later JJWXC styles without changing content or channel sprites",
         backgroundImage: style.backgroundImage,
         borderColor: style.borderColor,
         fontFamily: style.fontFamily,
+        fontSize: style.fontSize,
+        lineHeight: style.lineHeight,
       };
     };
 
@@ -312,8 +320,11 @@ test("wins over later JJWXC styles without changing content or channel sprites",
   expect(styles.prose.color).toBe("rgb(101, 123, 131)");
   expect(styles.prose.fontFamily).toContain('"LXGW WenKai Screen"');
   expect(styles.prose.fontFamily.startsWith('"LXGW WenKai Screen"')).toBe(true);
+  expect(styles.prose.fontSize).toBe("20px");
+  expect(styles.prose.lineHeight).toBe("36px");
   expect(styles.heading.fontFamily).not.toContain("LXGW WenKai Screen");
   expect(styles.heading.fontFamily).toContain("Microsoft YaHei");
+  expect(styles.heading.fontSize).toBe("16px");
   expect(styles.authorNoteHeading.fontFamily).not.toContain("LXGW WenKai Screen");
   expect(styles.authorNoteHeading.fontFamily).toContain("Microsoft YaHei");
   expect(styles.heading.color).toBe("rgb(88, 110, 117)");

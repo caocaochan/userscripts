@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         JJWXC Reader — LXGW WenKai + Solarized Light
 // @namespace    https://www.jjwxc.net/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/jjwxc-reader-theme.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/jjwxc-reader-theme.user.js
-// @description  Applies LXGW WenKai Screen to JJWXC chapter prose and themes desktop chapter pages with Solarized Light.
+// @description  Formats JJWXC chapter prose at 20px with LXGW WenKai Screen and themes desktop chapter pages with Solarized Light.
 // @author       CaoCao
 // @match        https://www.jjwxc.net/onebook.php*
 // @tag          jjwxc
@@ -76,6 +76,7 @@
 
     #paragraph_comment_content {
       color: var(--solarized-base00) !important;
+      font-size: 20px !important;
       font-family:
         "LXGW WenKai Screen",
         "Microsoft YaHei",
