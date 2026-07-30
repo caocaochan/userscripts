@@ -62,6 +62,22 @@
       ]
     },
     {
+      "id": "jjwxc-reader-theme",
+      "name": "JJWXC Reader — LXGW WenKai + Solarized Light",
+      "description": "Applies LXGW WenKai Screen to JJWXC chapter prose and themes desktop chapter pages with Solarized Light.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/jjwxc-reader-theme.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/jjwxc-reader-theme.user.js",
+      "tags": [
+        "tampermonkey",
+        "jjwxc",
+        "chinese",
+        "novels",
+        "font",
+        "solarized",
+        "theme"
+      ]
+    },
+    {
       "id": "missevan-subtitle-styler",
       "name": "Missevan Subtitle Styler",
       "description": "Adds readable, customizable subtitle styling controls to Missevan sound player pages.",

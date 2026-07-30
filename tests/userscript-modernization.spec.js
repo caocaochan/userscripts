@@ -36,6 +36,12 @@ const SCRIPT_CONFIG = {
     ],
     spa: true,
   },
+  "jjwxc-reader-theme.user.js": {
+    grants: [
+      "GM.addStyle",
+    ],
+    spa: false,
+  },
   "missevan-subtitle-styler.user.js": {
     grants: [
       "GM.addStyle",

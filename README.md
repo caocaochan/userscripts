@@ -22,6 +22,9 @@ Userscripts in this repo can be installed directly from the raw file URL. They t
 - **iQIYI Subtitle Downloader**
   Adds a floating subtitles panel to `https://www.iq.com/play/*` and `https://www.iqiyi.com/v_*.html` episode pages and downloads available subtitle tracks as `.srt` files. It uses IQ.com’s embedded Next.js subtitle metadata and iQIYI.com’s runtime player subtitle metadata.
 
+- **JJWXC Reader — LXGW WenKai + Solarized Light**
+  Applies the locally installed `LXGW WenKai Screen` font to chapter prose on desktop `https://www.jjwxc.net/onebook.php*` pages and themes the surrounding reader, navigation, sidebars, controls, author notes, comments, and footer with Solarized Light. If the font is unavailable, the script falls back to JJWXC’s existing Chinese font stack. Logos, advertisements, cover art, QR codes, and indispensable image-based channel labels keep their original colors.
+
 - **Missevan Subtitle Styler**
   Adds a floating `Subs` settings panel to `https://www.missevan.com/sound/player*` pages and improves audio-drama subtitles with customizable font family, size, line height, vertical position, speaker colors, text color, background opacity, and shadow strength.
 
