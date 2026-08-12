@@ -68,6 +68,15 @@ const SCRIPT_CONFIG = {
     ],
     spa: true,
   },
+  "youtube-exact-dates.user.js": {
+    grants: [
+      "GM.getValue",
+      "GM.setValue",
+      "GM.xmlHttpRequest",
+      "window.onurlchange",
+    ],
+    spa: true,
+  },
   "yatsu-simplified-chinese.user.js": {
     grants: [
       "GM.getValue",

@@ -121,6 +121,19 @@
       ]
     },
     {
+      "id": "youtube-exact-dates",
+      "name": "YouTube Exact Dates",
+      "description": "Replaces relative YouTube video dates with exact browser-local timestamps.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/youtube-exact-dates.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/youtube-exact-dates.user.js",
+      "tags": [
+        "tampermonkey",
+        "youtube",
+        "dates",
+        "timestamps"
+      ]
+    },
+    {
       "id": "yatsu-simplified-chinese",
       "name": "Yatsu Reader — Traditional to Simplified Chinese",
       "description": "Converts Traditional Chinese text throughout Yatsu Reader to Simplified orthography with OpenCC, without vocabulary localization.",

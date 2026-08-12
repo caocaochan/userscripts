@@ -34,6 +34,9 @@ Userscripts in this repo can be installed directly from the raw file URL. They t
 - **GagaOOLala Subtitle Downloader**
   Adds a floating subtitles panel to `https://www.gagaoolala.com/*/videos/*` video pages and downloads available WebVTT subtitle tracks as `.srt` files. GagaOOLala exposes playback subtitle manifests only to logged-in sessions, so sign in first before refreshing the panel or starting playback.
 
+- **YouTube Exact Dates**
+  Replaces English relative video dates on desktop `https://www.youtube.com/*` watch pages and video cards with exact browser-local `YYYY-MM-DD HH:mm` timestamps. Watch pages use metadata already in the document. Uncached cards fetch their watch-page metadata only when they approach the viewport, with two-request concurrency, per-video deduplication, and a bounded persistent cache. Comments, community posts, and live chat are left unchanged.
+
 - **Yatsu Reader — Traditional to Simplified Chinese**
   Converts Traditional Chinese text throughout `https://app.yatsu.moe/*`, including dynamically added content, inline-formatted ebook text, discovered open shadow roots, and the page title, to Simplified orthography with OpenCC. Conversion preserves phrase context and common already-Simplified or mixed-script content, handles `著` / `着` at Chinese word boundaries using protected Traditional and Simplified lexical forms, and conservatively leaves genuinely ambiguous standalone `著` and `么` unchanged, without localizing regional vocabulary. Form values and text-bearing attributes are left unchanged. The conversion can be toggled from Tampermonkey's userscript menu.
 
