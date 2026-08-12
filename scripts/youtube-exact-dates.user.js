@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Exact Dates
 // @namespace    https://www.youtube.com/
-// @version      0.1.1
+// @version      0.1.2
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/youtube-exact-dates.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/youtube-exact-dates.user.js
 // @description  Replaces relative YouTube video dates with exact browser-local timestamps.
@@ -27,12 +27,14 @@
   const CACHE_KEY = "youtube-exact-dates-cache-v1";
   const CACHE_CAPACITY = 2000;
   const CACHE_SAVE_DELAY_MS = 1000;
-  const REQUEST_TIMEOUT_MS = 10000;
-  const MAX_CONCURRENT_REQUESTS = 2;
+  const REQUEST_TIMEOUT_MS = 30000;
+  const PLAYLIST_FEED_TIMEOUT_MS = 10000;
+  const MAX_CONCURRENT_REQUESTS = 1;
   const PRELOAD_MARGIN_PX = 600;
   const INTERSECTION_ROOT_MARGIN = `${PRELOAD_MARGIN_PX}px 0px`;
   const WATCH_RESCAN_DELAY_MS = 250;
   const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+  const PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,100}$/;
   const TARGET_VIDEO_ATTRIBUTE = "data-youtube-exact-date-video-id";
   const TARGET_APPLIED_ATTRIBUTE = "data-youtube-exact-date-applied";
 
@@ -77,6 +79,8 @@
   const activeRequests = new Map();
   const requestQueue = [];
   const targetsByVideoId = new Map();
+  const attemptedPlaylistFeeds = new Set();
+  const playlistFeedRequests = new Map();
   const scanRoots = new Set();
   const warnedCategories = new Set();
 
@@ -171,6 +175,25 @@
 
   function currentRouteVideoId() {
     return extractVideoIdFromUrl(location.href);
+  }
+
+  function currentRoutePlaylistId() {
+    let url;
+    try {
+      url = new URL(location.href);
+    } catch {
+      return null;
+    }
+    if (url.pathname !== "/playlist") return null;
+    const playlistId = url.searchParams.get("list");
+    return typeof playlistId === "string" && PLAYLIST_ID_PATTERN.test(playlistId)
+      ? playlistId
+      : null;
+  }
+
+  function isCurrentPlaylistFeedPending() {
+    const playlistId = currentRoutePlaylistId();
+    return playlistId !== null && playlistFeedRequests.has(playlistId);
   }
 
   function readTimestampFromDocument(documentNode) {
@@ -325,7 +348,8 @@
     }
 
     if (
-      failedVideoIds.has(videoId)
+      isCurrentPlaylistFeedPending()
+      || failedVideoIds.has(videoId)
       || queuedVideoIds.has(videoId)
       || activeRequests.has(videoId)
     ) {
@@ -509,6 +533,96 @@
     }
   }
 
+  async function fetchPlaylistFeed(playlistId) {
+    let request;
+    try {
+      const url = new URL("/feeds/videos.xml", location.origin);
+      url.searchParams.set("playlist_id", playlistId);
+      request = GM.xmlHttpRequest({
+        method: "GET",
+        url,
+        headers: {
+          Accept: "application/atom+xml, application/xml;q=0.9, text/xml;q=0.8",
+        },
+        responseType: "text",
+        redirect: "follow",
+      });
+    } catch (error) {
+      warnOnce("playlist-feed-start", "Could not start the playlist feed request.", error);
+      return new Map();
+    }
+
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      request.abort();
+    }, PLAYLIST_FEED_TIMEOUT_MS);
+
+    try {
+      const response = await request;
+      if (response.status < 200 || response.status >= 300) {
+        warnOnce("playlist-feed-status", "YouTube returned an unsuccessful playlist feed.");
+        return new Map();
+      }
+
+      const responseText = typeof response.responseText === "string"
+        ? response.responseText
+        : response.response;
+      if (typeof responseText !== "string" || !responseText) return new Map();
+
+      const parsedDocument = new DOMParser().parseFromString(responseText, "application/xml");
+      if (parsedDocument.querySelector("parsererror")) return new Map();
+
+      const timestamps = new Map();
+      for (const entry of parsedDocument.getElementsByTagNameNS(
+        "http://www.w3.org/2005/Atom",
+        "entry",
+      )) {
+        const videoId = entry.getElementsByTagNameNS(
+          "http://www.youtube.com/xml/schemas/2015",
+          "videoId",
+        )[0]?.textContent?.trim();
+        const published = entry.getElementsByTagNameNS(
+          "http://www.w3.org/2005/Atom",
+          "published",
+        )[0]?.textContent?.trim();
+        const timestamp = isVideoId(videoId) ? normalizeTimestamp(published) : null;
+        if (timestamp) timestamps.set(videoId, timestamp);
+      }
+      return timestamps;
+    } catch (error) {
+      if (timedOut) {
+        warnOnce("playlist-feed-timeout", "The playlist feed request timed out.");
+      } else {
+        warnOnce("playlist-feed-failure", "Could not load the playlist feed.", error);
+      }
+      return new Map();
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  async function prepareCurrentPlaylistFeed() {
+    const playlistId = currentRoutePlaylistId();
+    if (!playlistId || attemptedPlaylistFeeds.has(playlistId)) return;
+
+    attemptedPlaylistFeeds.add(playlistId);
+    const request = fetchPlaylistFeed(playlistId);
+    playlistFeedRequests.set(playlistId, request);
+
+    try {
+      const timestamps = await request;
+      for (const [videoId, timestamp] of timestamps) {
+        const storedTimestamp = storeTimestamp(videoId, timestamp);
+        if (storedTimestamp) applyTimestampToTargets(videoId, storedTimestamp);
+      }
+    } finally {
+      if (playlistFeedRequests.get(playlistId) === request) {
+        playlistFeedRequests.delete(playlistId);
+      }
+    }
+  }
+
   function pumpRequestQueue() {
     while (
       activeRequests.size < MAX_CONCURRENT_REQUESTS
@@ -566,13 +680,23 @@
     }, WATCH_RESCAN_DELAY_MS);
   }
 
+  async function handleRouteChange() {
+    await prepareCurrentPlaylistFeed();
+    scheduleRouteScan();
+  }
+
   async function main() {
     await loadCache();
+    await prepareCurrentPlaylistFeed();
     startIntersectionObserver();
     startMutationObserver();
 
     if (window.onurlchange === null) {
-      window.addEventListener("urlchange", scheduleRouteScan);
+      window.addEventListener("urlchange", () => {
+        void handleRouteChange().catch((error) => {
+          console.error(`${LOG_PREFIX} Route update failed.`, error);
+        });
+      });
     }
 
     scheduleRouteScan();

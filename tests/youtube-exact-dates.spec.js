@@ -12,6 +12,7 @@ const VIDEO_A = "AAAAAAA0001";
 const VIDEO_B = "BBBBBBB0002";
 const VIDEO_C = "CCCCCCC0003";
 const VIDEO_D = "DDDDDDD0004";
+const PLAYLIST_ID = "PLCZsar9rNRv1HTX-QRIDw0-Avm4Cd1mKx";
 
 function modernCard(videoId, dateText, id = "") {
   return `
@@ -88,7 +89,7 @@ async function loadFixture(page, {
       const nativeSetTimeout = window.setTimeout.bind(window);
       window.setTimeout = (callback, delay, ...args) => nativeSetTimeout(
         callback,
-        delay === 10000 ? 0 : delay,
+        delay === 30000 ? 0 : delay,
         ...args,
       );
     }
@@ -132,9 +133,22 @@ async function loadFixture(page, {
       }
     };
 
-    function responseHtml(responseConfiguration) {
+    function responseBody(responseConfiguration) {
       if (typeof responseConfiguration.html === "string") {
         return responseConfiguration.html;
+      }
+      if (Array.isArray(responseConfiguration.feedEntries)) {
+        const entries = responseConfiguration.feedEntries.map(({ videoId, timestamp }) => `
+          <entry>
+            <yt:videoId>${videoId}</yt:videoId>
+            <published>${timestamp}</published>
+          </entry>
+        `).join("");
+        return `<?xml version="1.0" encoding="UTF-8"?>
+          <feed xmlns="http://www.w3.org/2005/Atom"
+                xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+            ${entries}
+          </feed>`;
       }
       const published = responseConfiguration.timestamp
         ? `<meta itemprop="datePublished" content="${responseConfiguration.timestamp}">`
@@ -165,12 +179,21 @@ async function loadFixture(page, {
       },
 
       xmlHttpRequest(details) {
-        const videoId = new URL(String(details.url)).searchParams.get("v");
-        const responseConfiguration = window.__responses[videoId] ?? { status: 404 };
+        const requestUrl = new URL(String(details.url));
+        const isPlaylistFeed = requestUrl.pathname === "/feeds/videos.xml";
+        const videoId = isPlaylistFeed ? null : requestUrl.searchParams.get("v");
+        const playlistId = isPlaylistFeed
+          ? requestUrl.searchParams.get("playlist_id")
+          : null;
+        const requestKey = isPlaylistFeed ? `playlist:${playlistId}` : videoId;
+        const responseConfiguration = window.__responses[requestKey] ?? { status: 404 };
         const call = {
           aborted: false,
           details,
+          isPlaylistFeed,
+          playlistId,
           reject: null,
+          requestKey,
           resolve: null,
           responseConfiguration,
           settled: false,
@@ -193,11 +216,11 @@ async function loadFixture(page, {
         };
 
         call.resolveConfiguredResponse = () => {
-          const html = responseHtml(responseConfiguration);
+          const responseBodyText = responseBody(responseConfiguration);
           settleCall(call, "resolve", {
             status: responseConfiguration.status ?? 200,
-            response: html,
-            responseText: html,
+            response: responseBodyText,
+            responseText: responseBodyText,
           });
         };
 
@@ -240,7 +263,7 @@ async function formatInBrowser(page, timestamp) {
 }
 
 test("metadata and repository catalog expose the intended Tampermonkey integration", () => {
-  expect(SCRIPT_SOURCE).toContain("// @version      0.1.1");
+  expect(SCRIPT_SOURCE).toContain("// @version      0.1.2");
   expect(SCRIPT_SOURCE).toContain("// @match        https://www.youtube.com/*");
   expect(SCRIPT_SOURCE).toContain("// @run-at       document-start");
   expect(SCRIPT_SOURCE).toContain("// @sandbox      DOM");
@@ -368,11 +391,15 @@ test("main playlist renderers support both legacy and view-model date markup", a
       ${playlistCard(VIDEO_A, "9 days ago", "playlist-legacy")}
       ${playlistCard(VIDEO_B, "4 weeks ago", "playlist-modern", true)}
     `,
-    cache: [[VIDEO_B, modernTimestamp]],
     responses: {
-      [VIDEO_A]: { timestamp: legacyTimestamp },
+      [`playlist:${PLAYLIST_ID}`]: {
+        feedEntries: [
+          { videoId: VIDEO_A, timestamp: legacyTimestamp },
+          { videoId: VIDEO_B, timestamp: modernTimestamp },
+        ],
+      },
     },
-    url: "https://www.youtube.com/playlist?list=PLAYLIST",
+    url: `https://www.youtube.com/playlist?list=${PLAYLIST_ID}`,
   });
 
   await expect(page.locator("#playlist-legacy #metadata-line > span:last-child"))
@@ -380,7 +407,13 @@ test("main playlist renderers support both legacy and view-model date markup", a
   await expect(page.locator("#playlist-modern span"))
     .toHaveText(await formatInBrowser(page, modernTimestamp));
   await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
-  expect(await page.evaluate(() => window.__gmCalls.requests[0].videoId)).toBe(VIDEO_A);
+  expect(await page.evaluate(() => ({
+    isPlaylistFeed: window.__gmCalls.requests[0].isPlaylistFeed,
+    playlistId: window.__gmCalls.requests[0].playlistId,
+  }))).toEqual({
+    isPlaylistFeed: true,
+    playlistId: PLAYLIST_ID,
+  });
 });
 
 test("uncached dynamic cards wait for intersection and reused cards apply the new cached video", async ({ page }) => {
@@ -478,7 +511,7 @@ test("failed and malformed responses remain relative and are not retried", async
   expect(pageErrors).toEqual([]);
 });
 
-test("request queue never exceeds two active metadata requests", async ({ page }) => {
+test("watch-page fallback queue runs only one metadata request at a time", async ({ page }) => {
   const timestamp = "2020-01-02T03:04:00Z";
   await loadFixture(page, {
     body: `
@@ -495,27 +528,20 @@ test("request queue never exceeds two active metadata requests", async ({ page }
     },
   });
 
-  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(2);
-  expect(await page.evaluate(() => window.__gmCalls.maxActiveRequests)).toBe(2);
-  const firstTwo = await page.evaluate(() => window.__gmCalls.requests.map(({ videoId }) => videoId));
-
-  await page.evaluate((videoId) => window.__resolveRequest(videoId), firstTwo[0]);
-  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(3);
-  expect(await page.evaluate(() => window.__gmCalls.maxActiveRequests)).toBe(2);
-
-  await page.evaluate((videoId) => window.__resolveRequest(videoId), firstTwo[1]);
-  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(4);
-  const allVideoIds = await page.evaluate(() => (
-    window.__gmCalls.requests.map(({ videoId }) => videoId)
-  ));
-  await page.evaluate((videoIds) => {
-    for (const videoId of videoIds) window.__resolveRequest(videoId);
-  }, allVideoIds.slice(2));
+  for (let requestCount = 1; requestCount <= 4; requestCount += 1) {
+    await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length))
+      .toBe(requestCount);
+    expect(await page.evaluate(() => window.__gmCalls.maxActiveRequests)).toBe(1);
+    const activeVideoId = await page.evaluate(() => (
+      window.__gmCalls.requests.find(({ settled }) => !settled)?.videoId
+    ));
+    await page.evaluate((videoId) => window.__resolveRequest(videoId), activeVideoId);
+  }
 
   const expected = await formatInBrowser(page, timestamp);
   await expect.poll(() => page.locator("yt-lockup-view-model span").allTextContents())
     .toEqual([expected, expected, expected, expected]);
-  expect(await page.evaluate(() => window.__gmCalls.maxActiveRequests)).toBe(2);
+  expect(await page.evaluate(() => window.__gmCalls.maxActiveRequests)).toBe(1);
 });
 
 test("timed-out requests abort once and do not create retry storms", async ({ page }) => {
