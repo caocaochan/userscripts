@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Exact Dates
 // @namespace    https://www.youtube.com/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/youtube-exact-dates.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/youtube-exact-dates.user.js
 // @description  Replaces relative YouTube video dates with exact browser-local timestamps.
@@ -29,7 +29,8 @@
   const CACHE_SAVE_DELAY_MS = 1000;
   const REQUEST_TIMEOUT_MS = 10000;
   const MAX_CONCURRENT_REQUESTS = 2;
-  const INTERSECTION_ROOT_MARGIN = "600px 0px";
+  const PRELOAD_MARGIN_PX = 600;
+  const INTERSECTION_ROOT_MARGIN = `${PRELOAD_MARGIN_PX}px 0px`;
   const WATCH_RESCAN_DELAY_MS = 250;
   const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
   const TARGET_VIDEO_ATTRIBUTE = "data-youtube-exact-date-video-id";
@@ -41,12 +42,13 @@
 
   const WATCH_DATE_SELECTOR = "ytd-watch-metadata yt-formatted-string#info > span";
   const MODERN_CARD_DATE_SELECTOR =
-    "yt-lockup-view-model .ytContentMetadataViewModelMetadataTextLastPart";
+    ".ytContentMetadataViewModelMetadataTextLastPart";
   const LEGACY_CARD_DATE_SELECTOR = [
     "ytd-rich-grid-media #metadata-line > span:last-child",
     "ytd-video-renderer #metadata-line > span:last-child",
     "ytd-grid-video-renderer #metadata-line > span:last-child",
     "ytd-compact-video-renderer #metadata-line > span:last-child",
+    "ytd-playlist-video-renderer #metadata-line > span:last-child",
     "ytd-playlist-panel-video-renderer #metadata-line > span:last-child",
   ].join(", ");
   const DATE_TARGET_SELECTOR = [
@@ -60,6 +62,7 @@
     "ytd-video-renderer",
     "ytd-grid-video-renderer",
     "ytd-compact-video-renderer",
+    "ytd-playlist-video-renderer",
     "ytd-playlist-panel-video-renderer",
   ].join(", ");
   const VIDEO_LINK_SELECTOR = [
@@ -131,6 +134,14 @@
 
   function normalizedElementText(element) {
     return (element.textContent ?? "").trim().replace(/\s+/gu, " ");
+  }
+
+  function isNearViewport(element) {
+    const rect = element.getBoundingClientRect();
+    return rect.bottom >= -PRELOAD_MARGIN_PX
+      && rect.top <= window.innerHeight + PRELOAD_MARGIN_PX
+      && rect.right >= 0
+      && rect.left <= window.innerWidth;
   }
 
   function isRelativeDateText(value) {
@@ -321,7 +332,11 @@
       return;
     }
 
-    intersectionObserver.observe(target);
+    if (isNearViewport(target)) {
+      enqueueVideo(videoId);
+    } else {
+      intersectionObserver.observe(target);
+    }
   }
 
   function resolveCardVideoId(target) {

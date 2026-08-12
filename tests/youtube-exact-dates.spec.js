@@ -37,6 +37,18 @@ function legacyCard(videoId, dateText, id = "") {
   `;
 }
 
+function playlistCard(videoId, dateText, id = "", modern = false) {
+  const metadata = modern
+    ? `<span class="ytContentMetadataViewModelMetadataTextLastPart">${dateText}</span>`
+    : `<div id="metadata-line"><span>1K views</span><span>${dateText}</span></div>`;
+  return `
+    <ytd-playlist-video-renderer id="${id}">
+      <a id="video-title" href="/watch?v=${videoId}&list=PLAYLIST&index=1">Video</a>
+      ${metadata}
+    </ytd-playlist-video-renderer>
+  `;
+}
+
 async function loadFixture(page, {
   body,
   cache = [],
@@ -228,7 +240,7 @@ async function formatInBrowser(page, timestamp) {
 }
 
 test("metadata and repository catalog expose the intended Tampermonkey integration", () => {
-  expect(SCRIPT_SOURCE).toContain("// @version      0.1.0");
+  expect(SCRIPT_SOURCE).toContain("// @version      0.1.1");
   expect(SCRIPT_SOURCE).toContain("// @match        https://www.youtube.com/*");
   expect(SCRIPT_SOURCE).toContain("// @run-at       document-start");
   expect(SCRIPT_SOURCE).toContain("// @sandbox      DOM");
@@ -348,11 +360,34 @@ test("modern and legacy cards use cache, deduplicate requests, and update attrib
   expect(await page.evaluate(() => window.__gmCalls.requests[0].videoId)).toBe(VIDEO_A);
 });
 
+test("main playlist renderers support both legacy and view-model date markup", async ({ page }) => {
+  const legacyTimestamp = "2026-08-03T12:00:05Z";
+  const modernTimestamp = "2026-07-15T08:09:00Z";
+  await loadFixture(page, {
+    body: `
+      ${playlistCard(VIDEO_A, "9 days ago", "playlist-legacy")}
+      ${playlistCard(VIDEO_B, "4 weeks ago", "playlist-modern", true)}
+    `,
+    cache: [[VIDEO_B, modernTimestamp]],
+    responses: {
+      [VIDEO_A]: { timestamp: legacyTimestamp },
+    },
+    url: "https://www.youtube.com/playlist?list=PLAYLIST",
+  });
+
+  await expect(page.locator("#playlist-legacy #metadata-line > span:last-child"))
+    .toHaveText(await formatInBrowser(page, legacyTimestamp));
+  await expect(page.locator("#playlist-modern span"))
+    .toHaveText(await formatInBrowser(page, modernTimestamp));
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
+  expect(await page.evaluate(() => window.__gmCalls.requests[0].videoId)).toBe(VIDEO_A);
+});
+
 test("uncached dynamic cards wait for intersection and reused cards apply the new cached video", async ({ page }) => {
   const fetchedTimestamp = "2024-01-02T03:04:00Z";
   const reusedTimestamp = "2016-07-08T09:10:00Z";
   await loadFixture(page, {
-    body: '<main id="feed"></main>',
+    body: '<main id="feed" style="position: absolute; top: 5000px"></main>',
     cache: [[VIDEO_B, reusedTimestamp]],
     intersectImmediately: false,
     responses: {
