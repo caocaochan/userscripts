@@ -68,6 +68,13 @@ const SCRIPT_CONFIG = {
     ],
     spa: true,
   },
+  "reddit-default-sorting.user.js": {
+    grants: [
+      "GM.addStyle",
+      "window.onurlchange",
+    ],
+    spa: true,
+  },
   "youtube-exact-dates.user.js": {
     grants: [
       "GM.getValue",

@@ -121,6 +121,19 @@
       ]
     },
     {
+      "id": "reddit-default-sorting",
+      "name": "Reddit Default Sorting",
+      "description": "Redirects the Reddit homepage to Top/Today and bare subreddit pages to New, and sets comment body text to 1rem.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/reddit-default-sorting.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/reddit-default-sorting.user.js",
+      "tags": [
+        "tampermonkey",
+        "reddit",
+        "sorting",
+        "navigation"
+      ]
+    },
+    {
       "id": "youtube-exact-dates",
       "name": "YouTube Exact Dates",
       "description": "Replaces relative YouTube video dates with exact browser-local timestamps.",

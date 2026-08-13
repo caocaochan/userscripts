@@ -19,6 +19,9 @@ Userscripts in this repo can be installed directly from the raw file URL. They t
 
   Requires a working `plex-mpv://` protocol handler on the machine. Season pages open an ordered M3U playlist in mpv, and show pages open the first season. A generic Windows handler is included in [`handlers/windows`](handlers/windows), with install notes in [`handlers/windows/README.md`](handlers/windows/README.md) and a registry template at [`handlers/windows/install-plex-mpv-handler.reg`](handlers/windows/install-plex-mpv-handler.reg). Browsers/userscripts cannot launch `mpv.exe` directly without an external protocol handler or helper.
 
+- **Reddit Default Sorting**
+  Redirects `reddit.com`, `www.reddit.com`, and `sh.reddit.com` homepages to Top posts from Today, and bare `/r/subreddit` pages to New. Matching links are rewritten on pointer or keyboard activation so Reddit navigates directly to the preferred feed without first loading the default route. Comment body text is set to `1rem` without changing author metadata or comment controls.
+
 - **iQIYI Subtitle Downloader**
   Adds a floating subtitles panel to `https://www.iq.com/play/*` and `https://www.iqiyi.com/v_*.html` episode pages and downloads available subtitle tracks as `.srt` files. It uses IQ.com’s embedded Next.js subtitle metadata and iQIYI.com’s runtime player subtitle metadata.
 
