@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Reddit Default Sorting
 // @namespace    https://www.reddit.com/
-// @version      2.1.0
+// @version      2.2.0
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/reddit-default-sorting.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/reddit-default-sorting.user.js
-// @description  Applies preferred Reddit sorting and sets comment body text to 1rem.
+// @description  Applies preferred Reddit sorting and sets post/comment body text to 1rem.
 // @author       CaoCao
 // @match        https://www.reddit.com/*
 // @match        https://reddit.com/*
@@ -27,8 +27,11 @@
     "https://sh.reddit.com",
   ]);
   const COMMUNITY_ROUTE_PATTERN = /^\/r\/([^/]+)\/?$/i;
-  const COMMENT_CSS = `
-    shreddit-comment [slot="comment"] {
+  const DISCUSSION_TEXT_CSS = `
+    shreddit-comment [slot="comment"],
+    shreddit-post[view-context="CommentsPage"]
+      [slot="text-body"]
+      [property="schema:articleBody"] {
       font-size: 1rem !important;
     }
   `;
@@ -88,7 +91,7 @@
   document.addEventListener("pointerdown", rewriteClickedLink, true);
   document.addEventListener("click", rewriteClickedLink, true);
 
-  GM.addStyle(COMMENT_CSS);
+  GM.addStyle(DISCUSSION_TEXT_CSS);
 
   if (window.onurlchange === null) {
     window.addEventListener("urlchange", enforceCurrentURL);

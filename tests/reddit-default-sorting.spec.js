@@ -36,7 +36,7 @@ test("metadata and manifest expose the installable userscript", () => {
   const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
   const entry = manifest.scripts.find(({ id }) => id === "reddit-default-sorting");
 
-  expect(source).toContain("// @version      2.1.0");
+  expect(source).toContain("// @version      2.2.0");
   expect(source).toContain("// @sandbox      DOM");
   expect(source).toContain("// @grant        GM.addStyle");
   expect(source).toContain("// @grant        window.onurlchange");
@@ -142,7 +142,7 @@ test("enforces sorting after a Tampermonkey urlchange event", async ({ page }) =
   await expect.poll(() => page.url()).toBe("https://reddit.com/r/playwright/new/");
 });
 
-test("sets comment body text to 1rem without resizing comment metadata or posts", async ({ page }) => {
+test("sets OP and comment bodies to 1rem without resizing metadata, titles, or feed posts", async ({ page }) => {
   await serveReddit(page);
   await page.goto("https://www.reddit.com/r/playwright/comments/example/thread/");
   await page.evaluate(() => {
@@ -150,11 +150,30 @@ test("sets comment body text to 1rem without resizing comment metadata or posts"
       <style>
         shreddit-comment [slot="comment"] { font-size: 14px; }
         shreddit-comment .metadata { font-size: 12px; }
-        article .md { font-size: 14px; }
+        shreddit-post [property="schema:articleBody"] { font-size: 14px; }
+        shreddit-post h1 { font-size: 24px; }
       </style>
     `);
     document.body.innerHTML = `
-      <article><div id="post-body" class="md">Post body</div></article>
+      <shreddit-post view-context="CommentsPage">
+        <h1 id="post-title">Post title</h1>
+        <shreddit-post-text-body slot="text-body">
+          <div slot="text-body">
+            <div id="op-body" class="md" property="schema:articleBody">
+              <p id="op-text">OP body</p>
+            </div>
+          </div>
+        </shreddit-post-text-body>
+      </shreddit-post>
+      <shreddit-post view-context="Feed">
+        <shreddit-post-text-body slot="text-body">
+          <div slot="text-body">
+            <div id="feed-post-body" class="md" property="schema:articleBody">
+              Feed preview
+            </div>
+          </div>
+        </shreddit-post-text-body>
+      </shreddit-post>
       <shreddit-comment>
         <div class="metadata">Author and controls</div>
         <div id="t1_example-comment-rtjson-content" class="md" slot="comment">
@@ -168,17 +187,23 @@ test("sets comment body text to 1rem without resizing comment metadata or posts"
   await page.addScriptTag({ path: SCRIPT_PATH });
 
   const sizes = await page.evaluate(() => ({
-    body: getComputedStyle(document.querySelector('[slot="comment"]')).fontSize,
-    paragraph: getComputedStyle(document.querySelector("#comment-text")).fontSize,
+    opBody: getComputedStyle(document.querySelector("#op-body")).fontSize,
+    opParagraph: getComputedStyle(document.querySelector("#op-text")).fontSize,
+    commentBody: getComputedStyle(document.querySelector('[slot="comment"]')).fontSize,
+    commentParagraph: getComputedStyle(document.querySelector("#comment-text")).fontSize,
     metadata: getComputedStyle(document.querySelector(".metadata")).fontSize,
-    post: getComputedStyle(document.querySelector("#post-body")).fontSize,
+    title: getComputedStyle(document.querySelector("#post-title")).fontSize,
+    feedPostBody: getComputedStyle(document.querySelector("#feed-post-body")).fontSize,
     addedStyleCount: window.__addedStyles.length,
   }));
   expect(sizes).toEqual({
-    body: "16px",
-    paragraph: "16px",
+    opBody: "16px",
+    opParagraph: "16px",
+    commentBody: "16px",
+    commentParagraph: "16px",
     metadata: "12px",
-    post: "14px",
+    title: "24px",
+    feedPostBody: "14px",
     addedStyleCount: 1,
   });
 });
