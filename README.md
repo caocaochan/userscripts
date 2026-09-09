@@ -4,7 +4,7 @@ Collection of my userscripts.
 
 ## Install
 
-Userscripts in this repo can be installed directly from the raw file URL. They target current Tampermonkey 5.3 or newer; compatibility with other userscript managers is not maintained.
+Userscripts in this repo can be installed directly from the raw file URL. They target Tampermonkey 5.3 or newer, except GagaOOLala which requires 5.4+ for direct Blob downloads; compatibility with other userscript managers is not maintained.
 
 Use a current desktop Chromium or Firefox release. Every script declares its required sandbox and runs only in the top frame. Scripts that need page JavaScript or page-context font access use `raw`; DOM-only scripts use `DOM`.
 
@@ -51,6 +51,8 @@ ESLint's flat configuration checks all 11 userscripts for correctness and modern
 
 - **GagaOOLala Subtitle Downloader**
   Adds a floating subtitles panel to `https://www.gagaoolala.com/*/videos/*` video pages and downloads available WebVTT subtitle tracks as `.srt` files. GagaOOLala exposes playback subtitle manifests only to logged-in sessions, so sign in first before refreshing the panel or starting playback.
+
+  Requires Tampermonkey 5.4+. Completed subtitles are saved directly through `GM.download` as Blobs, with the button disabled until the operation settles. Explicit download permission/support errors fall back to an anchor download of the same Blob; cancellation stops without retrying, and other save failures report an error. The anchor fallback reports only that the download started because it cannot confirm completion.
 
   Segmented downloads require every segment to succeed. Tracks with non-identity HLS timestamp maps need video timing data and report that limitation instead of producing inaccurate SRT; MP4-wrapped subtitle segments are not decoded. The refresh menu fetches fresh playback URLs when cached links have expired.
 

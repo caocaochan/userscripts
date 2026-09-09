@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GagaOOLala Subtitle Downloader
 // @namespace    https://www.gagaoolala.com/
-// @version      0.1.4
+// @version      0.1.5
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for GagaOOLala subtitle tracks.
@@ -405,30 +405,42 @@
     button.textContent = "...";
 
     try {
-      const subtitle = await buildSubtitleDownload(track);
-      saveBlob(subtitle.blob, buildFilename(state, track, subtitle.extension));
-      showToast(`Downloading ${track.name} subtitles`);
-    } catch (error) {
-      if (track.type === "hls" || track.type === "segments") {
+      let subtitle;
+      try {
+        subtitle = await buildSubtitleDownload(track);
+      } catch (error) {
+        if (isCancelledDownload(error)) throw error;
         console.warn("[GagaOOLala Subtitle Downloader]", error);
-        showToast(error?.userFacing || `Could not download complete ${track.name} subtitles`);
+        if (track.type === "hls" || track.type === "segments") {
+          showToast(error?.userFacing || `Could not download complete ${track.name} subtitles`);
+          return;
+        }
+        // Only generation failures may fall back to the original track.
+        try {
+          await downloadRawSubtitle(track, buildFilename(state, track, extensionFromUrl(track.url)));
+          showToast(`${track.name} subtitles downloaded`);
+        } catch (downloadError) {
+          if (isCancelledDownload(downloadError)) throw downloadError;
+          console.warn("[GagaOOLala Subtitle Downloader]", downloadError);
+          showToast(`Could not download ${track.name}; opening subtitle URL`);
+          if (track.url) {
+            window.open(track.url, "_blank", "noopener");
+          }
+        }
+        return;
+      }
+
+      const method = await saveBlob(subtitle.blob, buildFilename(state, track, subtitle.extension));
+      showToast(method === "gm"
+        ? `${track.name} subtitles downloaded`
+        : `${track.name} subtitle download started`);
+    } catch (error) {
+      if (isCancelledDownload(error)) {
+        showToast("Download cancelled");
         return;
       }
       console.warn("[GagaOOLala Subtitle Downloader]", error);
-      try {
-        await downloadRawSubtitle(track, buildFilename(state, track, extensionFromUrl(track.url)));
-        showToast(`Downloading ${track.name} subtitles`);
-      } catch (downloadError) {
-        if (isCancelledDownload(downloadError)) {
-          showToast("Download cancelled");
-          return;
-        }
-        console.warn("[GagaOOLala Subtitle Downloader]", downloadError);
-        showToast(`Could not download ${track.name}; opening subtitle URL`);
-        if (track.url) {
-          window.open(track.url, "_blank", "noopener");
-        }
-      }
+      showToast(`Could not save ${track.name} subtitles`);
     } finally {
       button.disabled = false;
       button.textContent = originalText || "SRT";
@@ -447,16 +459,34 @@
     });
   }
 
-  function saveBlob(blob, filename) {
-    const objectUrl = URL.createObjectURL(blob);
+  async function saveBlob(blob, filename) {
+    try {
+      await GM.download({ url: blob, name: filename, saveAs: false });
+      return "gm";
+    } catch (error) {
+      if (isCancelledDownload(error)) throw error;
+      // These failures occur before downloading; other errors may be ambiguous.
+      if (!["not_enabled", "not_whitelisted", "not_permitted", "not_supported"].includes(error?.error)) {
+        throw error;
+      }
+      saveBlobViaAnchor(blob, filename);
+      return "anchor";
+    }
+  }
+
+  function saveBlobViaAnchor(blob, filename) {
     const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = filename;
-    link.style.display = "none";
-    getMountRoot().appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      link.href = objectUrl;
+      link.download = filename;
+      link.style.display = "none";
+      getMountRoot().appendChild(link);
+      link.click();
+    } finally {
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
   }
 
   function isCancelledDownload(error) {
