@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         iQIYI Subtitle Downloader
 // @namespace    https://www.iq.com/
-// @version      0.1.4
+// @version      0.1.5
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for subtitles on iQ.com and iQIYI.com episode pages.
@@ -11,6 +11,7 @@
 // @match        https://www.iqiyi.com/v_*.html*
 // @match        https://iqiyi.com/v_*.html*
 // @run-at       document-idle
+// @sandbox      raw
 // @grant        GM.addStyle
 // @grant        GM.download
 // @grant        GM.xmlHttpRequest
@@ -22,6 +23,7 @@
 // @connect      www.iqiyi.com
 // @connect      iqiyi.com
 // @connect      mesh.if.iqiyi.com
+// @noframes
 // ==/UserScript==
 
 (() => {
@@ -38,6 +40,7 @@
   const STATUS_CLASS = "iqiyi-subtitle-downloader-status";
   const SRT_BASE_URL = "https://meta.video.iqiyi.com";
   const FETCH_STALE_DELAY_MS = 350;
+  const REQUEST_TIMEOUT_MS = 30000;
   const IQIYI_RUNTIME_RETRY_MS = 500;
   const IQIYI_RUNTIME_MAX_RETRIES = 20;
   const IQIYI_LANGUAGE_BY_LID = {
@@ -206,6 +209,8 @@
   let menuCommandsInstalled = false;
   let hasStarted = false;
   let isPanelOpen = false;
+  let pageRequestController = null;
+  let refreshGeneration = 0;
 
   console.info("[iQIYI Subtitle Downloader] started", window.location.href);
 
@@ -326,6 +331,10 @@
       await downloadSubtitle(subtitle.url, buildFilename(state, subtitle));
       showToast(`Downloading ${subtitle.name} subtitles`);
     } catch (error) {
+      if (isCancelledDownload(error)) {
+        showToast("Download cancelled");
+        return;
+      }
       console.warn("[iQIYI Subtitle Downloader]", error);
       showToast(`Could not download ${subtitle.name}; opening subtitle URL`);
       window.open(subtitle.url, "_blank", "noopener");
@@ -342,9 +351,16 @@
         name: filename,
         saveAs: false,
       });
-    } catch {
+    } catch (error) {
+      if (isCancelledDownload(error)) throw error;
       await downloadViaRequest(url, filename);
     }
+  }
+
+  function isCancelledDownload(error) {
+    return [error, error?.error, error?.message, error?.details, error?.details?.current]
+      .some((reason) => typeof reason === "string"
+        && /^(?:USER_)?CANCEL(?:L)?ED$/i.test(reason.trim()));
   }
 
   async function downloadViaRequest(url, filename) {
@@ -352,13 +368,18 @@
       method: "GET",
       url,
       responseType: "blob",
+      timeout: REQUEST_TIMEOUT_MS,
     });
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Subtitle request failed with HTTP ${response.status}`);
     }
 
-    saveBlob(response.response, filename);
+    const blob = response.response;
+    if (!(blob instanceof Blob) || blob.size === 0 || /(?:text\/html|application\/json)/i.test(blob.type)) {
+      throw new Error("Subtitle request returned empty or unexpected data.");
+    }
+    saveBlob(blob, filename);
   }
 
   function saveBlob(blob, filename) {
@@ -386,6 +407,8 @@
   }
 
   function refreshFromDocument() {
+    refreshGeneration += 1;
+    pageRequestController?.abort();
     if (isIqiyiHost()) {
       refreshFromIqiyiRuntime();
       return;
@@ -393,7 +416,11 @@
 
     resetIqiyiRuntimeRetry();
     const state = extractStateFromDocument(document);
-    renderState(state);
+    if (isStateHrefCurrent(state.href)) {
+      renderState(state);
+    } else {
+      renderState(buildState({}, [], window.location.href, "loading", "Loading subtitles..."));
+    }
 
     window.clearTimeout(fallbackFetchTimer);
     if (!isStateHrefCurrent(state.href) || state.source === "missing") {
@@ -429,8 +456,16 @@
   }
 
   async function refreshFromFetchedPage() {
+    pageRequestController?.abort();
+    const controller = new AbortController();
+    pageRequestController = controller;
+    const href = window.location.href;
+    const generation = ++refreshGeneration;
+    const isCurrent = () => !controller.signal.aborted
+      && generation === refreshGeneration && href === window.location.href;
     try {
-      const response = await fetch(window.location.href, {
+      const response = await fetch(href, {
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
         credentials: "include",
         headers: {
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -442,11 +477,15 @@
       }
 
       const html = await response.text();
+      if (!isCurrent()) return;
       const doc = new DOMParser().parseFromString(html, "text/html");
-      renderState(extractStateFromDocument(doc, window.location.href));
+      renderState(extractStateFromDocument(doc, href));
     } catch (error) {
+      if (!isCurrent()) return;
       console.warn("[iQIYI Subtitle Downloader]", error);
-      renderState(buildState({}, [], window.location.href, "error", "Could not read iQIYI page data"));
+      renderState(buildState({}, [], href, "error", "Could not read iQIYI page data"));
+    } finally {
+      if (pageRequestController === controller) pageRequestController = null;
     }
   }
 
@@ -547,6 +586,7 @@
 
     try {
       const response = await fetch(`https://mesh.if.iqiyi.com/player/lw/video/playervideoinfo?id=${encodeURIComponent(key)}&locale=cn_s`, {
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         credentials: "include",
         headers: {
           Accept: "application/json,*/*;q=0.8",
@@ -636,17 +676,24 @@
     const seenNames = new Map();
     return entries
       .filter((entry) => entry && typeof entry.srt === "string" && entry.srt.trim())
-      .map((entry) => {
+      .flatMap((entry) => {
+        let url;
+        try {
+          url = new URL(entry.srt, baseUrl);
+        } catch {
+          return [];
+        }
+        if (url.protocol !== "https:" && url.protocol !== "http:") return [];
         const baseName = normalizeText(getSubtitleName(entry)) || "Subtitle";
         const duplicateCount = seenNames.get(baseName) || 0;
         seenNames.set(baseName, duplicateCount + 1);
 
-        return {
+        return [{
           name: duplicateCount ? `${baseName} ${duplicateCount + 1}` : baseName,
           sort: numberValue(entry._sort),
           lid: numberValue(entry.lid),
-          url: new URL(entry.srt, baseUrl).toString(),
-        };
+          url: url.href,
+        }];
       })
       .sort((left, right) => (
         compareNullableNumbers(left.sort, right.sort)
@@ -739,7 +786,13 @@
   }
 
   function observeNavigation() {
-    window.addEventListener("urlchange", () => scheduleRefresh(0));
+    window.addEventListener("urlchange", () => {
+      refreshGeneration += 1;
+      pageRequestController?.abort();
+      window.clearTimeout(fallbackFetchTimer);
+      resetIqiyiRuntimeRetry();
+      scheduleRefresh(0);
+    });
     document.addEventListener("pointerdown", onDocumentPointerDown, true);
     document.addEventListener("keydown", onDocumentKeyDown, true);
   }

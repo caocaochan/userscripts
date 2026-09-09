@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Plex Open in mpv
 // @namespace    http://127.0.0.1:32400/
-// @version      0.3.4
+// @version      0.3.5
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/plex-open-in-mpv.user.js
 // @description  Adds Open in mpv controls to local Plex detail pages and Home/library media cards.
@@ -10,8 +10,10 @@
 // @match        http://127.0.0.1:32400/web/index.html*
 // @match        http://localhost:32400/web/index.html*
 // @run-at       document-idle
+// @sandbox      DOM
 // @grant        GM.addStyle
 // @grant        window.onurlchange
+// @noframes
 // ==/UserScript==
 
 (() => {
@@ -27,6 +29,7 @@
   const CARD_BUTTON_MOUNT_CLASS = "plex-open-in-mpv-card-button-mount";
   const CARD_PROCESSED_ATTR = "data-plex-open-in-mpv-card";
   const CARD_SCAN_INTERVAL_MS = 800;
+  const busyCardButtons = new WeakSet();
   const READY_LABEL = "Open in mpv";
   const LOADING_LABEL = "Resolving...";
   const TOKEN_KEYS = new Set(["authToken", "token", "X-Plex-Token", "xPlexToken", "plexToken"]);
@@ -394,6 +397,7 @@
           existingButton.dataset.ratingKey = ratingKey;
         }
 
+        if (busyCardButtons.has(existingButton)) return;
         if (existingButton.disabled !== !tokenAvailable) {
           existingButton.disabled = !tokenAvailable;
         }
@@ -434,7 +438,7 @@
     stopCardButtonEvent(event);
 
     const button = event.currentTarget;
-    if (!(button instanceof HTMLButtonElement)) {
+    if (!(button instanceof HTMLButtonElement) || busyCardButtons.has(button)) {
       return;
     }
 
@@ -451,6 +455,7 @@
     }
 
     const originalText = button.textContent;
+    busyCardButtons.add(button);
     button.disabled = true;
     button.textContent = "...";
     button.title = "Resolving...";
@@ -460,7 +465,8 @@
     } catch (error) {
       showToast(error?.message || "Could not read Plex metadata");
     } finally {
-      button.disabled = false;
+      busyCardButtons.delete(button);
+      button.disabled = !findPlexToken();
       button.textContent = originalText || "mpv";
       button.title = "Open in mpv";
     }
@@ -638,16 +644,6 @@
     );
   }
 
-  function isReasonableCardMount(element, card) {
-    if (!card.contains(element)) {
-      return false;
-    }
-
-    const rect = element.getBoundingClientRect();
-    const cardRect = card.getBoundingClientRect();
-    return rect.width <= cardRect.width + 2 && rect.height < 80;
-  }
-
   function shouldSkipCardSource(element) {
     return !!element.closest(`#${BUTTON_ID}, .${CARD_BUTTON_CLASS}, nav, [role="navigation"], [role="tablist"], [role="toolbar"]`);
   }
@@ -717,7 +713,14 @@
   }
 
   function openSingleItemInMpv(item) {
-    const part = pickBestPart(item);
+    const parts = pickBestParts(item);
+    if (parts.length > 1) {
+      const playlist = buildPlaylist(parts.map((part) => ({ episode: item, part })));
+      window.location.href = buildMpvPlaylistUrl(playlist);
+      showToast("Opening in mpv");
+      return;
+    }
+    const part = parts[0];
     if (!part) {
       showToast("No local Plex file path found");
       return;
@@ -752,11 +755,7 @@
 
   function openEpisodesAsPlaylist(episodes, successMessage) {
     const entries = sortEpisodes(episodes)
-      .map((episode) => ({
-        episode,
-        part: pickBestPart(episode),
-      }))
-      .filter((entry) => entry.part && normalizeLocalFilePath(entry.part.file));
+      .flatMap((episode) => pickBestParts(episode).map((part) => ({ episode, part })));
 
     if (!entries.length) {
       showToast("No local Plex file path found");
@@ -803,6 +802,7 @@
     let response;
     try {
       response = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(15000),
         credentials: "same-origin",
         headers: {
           Accept: "application/json, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
@@ -903,32 +903,28 @@
     };
   }
 
-  function pickBestPart(item) {
+  function pickBestParts(item) {
     const candidates = [];
     item.media.forEach((media, mediaIndex) => {
-      media.parts.forEach((part, partIndex) => {
-        const file = normalizeLocalFilePath(part.file);
-        if (!file) {
-          return;
-        }
-
-        candidates.push({
-          key: part.key,
-          file,
-          score: [
-            resolutionValue(media.videoResolution),
-            part.size,
-            part.duration || media.duration,
-            CONTAINER_RANK[String(part.container || "").toLowerCase()] || 0,
-            -mediaIndex,
-            -partIndex,
-          ],
-        });
+      const parts = media.parts.map((part) => ({
+        ...part,
+        file: normalizeLocalFilePath(part.file),
+        duration: part.duration || (media.parts.length === 1 ? media.duration : 0),
+      }));
+      if (!parts.length || parts.some((part) => !part.file)) return;
+      candidates.push({
+        parts,
+        score: [
+          resolutionValue(media.videoResolution),
+          parts.reduce((sum, part) => sum + numberValue(part.size), 0),
+          media.duration || parts.reduce((sum, part) => sum + numberValue(part.duration), 0),
+          CONTAINER_RANK[String(parts[0].container || "").toLowerCase()] || 0,
+          -mediaIndex,
+        ],
       });
     });
 
-    candidates.sort((a, b) => compareScores(b.score, a.score));
-    return candidates[0] || null;
+    return candidates.toSorted((a, b) => compareScores(b.score, a.score))[0]?.parts ?? [];
   }
 
   function compareScores(left, right) {
@@ -957,17 +953,12 @@
         continue;
       }
 
-      const duration = Math.floor((entry.part.duration || getEpisodeDuration(entry.episode)) / 1000);
+      const duration = Math.floor(entry.part.duration / 1000);
       lines.push(`#EXTINF:${Number.isFinite(duration) && duration > 0 ? duration : -1},${formatEpisodeTitle(entry.episode)}`);
       lines.push(filePath);
     }
 
     return `${lines.join("\n")}\n`;
-  }
-
-  function getEpisodeDuration(episode) {
-    const mediaDurations = episode.media.map((media) => media.duration).filter(Boolean);
-    return mediaDurations[0] || 0;
   }
 
   function formatEpisodeTitle(episode) {
@@ -1137,7 +1128,9 @@
   }
 
   function normalizeLocalFilePath(value) {
-    return normalizeText(value);
+    // File paths are identifiers: repeated spaces and NBSP are significant.
+    return typeof value === "string" && value.trim() && !/[\u0000\r\n]/u.test(value)
+      ? value : "";
   }
 
   function toArray(value) {

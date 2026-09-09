@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Exact Dates
 // @namespace    https://www.youtube.com/
-// @version      0.1.2
+// @version      0.1.3
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/youtube-exact-dates.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/youtube-exact-dates.user.js
 // @description  Replaces relative YouTube video dates with exact browser-local timestamps.
@@ -79,6 +79,7 @@
   const activeRequests = new Map();
   const requestQueue = [];
   const targetsByVideoId = new Map();
+  const originalDates = new WeakMap();
   const attemptedPlaylistFeeds = new Set();
   const playlistFeedRequests = new Map();
   const scanRoots = new Set();
@@ -162,7 +163,7 @@
 
     if (url.origin !== location.origin) return null;
 
-    let videoId = null;
+    let videoId;
     if (url.pathname === "/watch") {
       videoId = url.searchParams.get("v");
     } else {
@@ -286,19 +287,40 @@
     ) {
       return;
     }
+    if (targetVideoId(target) !== videoId) {
+      processDateTarget(target);
+      return;
+    }
 
     const formatted = formatTimestamp(timestamp);
     if (!formatted) return;
 
     const currentText = normalizedElementText(target);
-    const wasApplied = target.hasAttribute(TARGET_APPLIED_ATTRIBUTE);
-    if (!isRelativeDateText(currentText) && !(wasApplied && currentText === formatted)) {
+    const original = originalDates.get(target);
+    if (!isRelativeDateText(currentText) && currentText !== original?.formatted) {
       return;
     }
 
+    if (isRelativeDateText(currentText)) {
+      originalDates.set(target, {
+        videoId,
+        text: currentText,
+        attributes: new Map(["aria-label", "title"].map((name) => [name, target.getAttribute(name)])),
+      });
+    }
     if (currentText !== formatted) target.textContent = formatted;
+    if (original && original.formatted !== formatted) {
+      for (const [name, value] of original.attributes) {
+        if (value !== null && target.getAttribute(name) === original.renderedAttributes.get(name)) {
+          target.setAttribute(name, value);
+        }
+      }
+    }
     replaceRelativeAttribute(target, "aria-label", formatted);
     replaceRelativeAttribute(target, "title", formatted);
+    const snapshot = originalDates.get(target);
+    snapshot.formatted = formatted;
+    snapshot.renderedAttributes = new Map(["aria-label", "title"].map((name) => [name, target.getAttribute(name)]));
     target.setAttribute(TARGET_APPLIED_ATTRIBUTE, "");
   }
 
@@ -329,7 +351,7 @@
   }
 
   function registerTarget(target, videoId) {
-    const previousVideoId = target.getAttribute(TARGET_VIDEO_ATTRIBUTE);
+    const previousVideoId = target.getAttribute(TARGET_VIDEO_ATTRIBUTE) ?? originalDates.get(target)?.videoId;
     if (previousVideoId && previousVideoId !== videoId) unregisterTarget(target);
 
     target.setAttribute(TARGET_VIDEO_ATTRIBUTE, videoId);
@@ -377,13 +399,26 @@
   function processDateTarget(target) {
     if (!(target instanceof Element)) return;
 
+    const videoId = targetVideoId(target);
+    const previousVideoId = target.getAttribute(TARGET_VIDEO_ATTRIBUTE) ?? originalDates.get(target)?.videoId;
+    if (previousVideoId && previousVideoId !== videoId) {
+      const original = originalDates.get(target);
+      if (original && normalizedElementText(target) === original.formatted) {
+        target.textContent = original.text;
+        for (const [name, value] of original.attributes) {
+          if (target.getAttribute(name) !== original.renderedAttributes.get(name)) continue;
+          if (value === null) target.removeAttribute(name);
+          else target.setAttribute(name, value);
+        }
+      }
+      originalDates.delete(target);
+      unregisterTarget(target);
+    }
+    if (!videoId) return;
     const currentText = normalizedElementText(target);
-    if (!isRelativeDateText(currentText)) return;
+    if (!isRelativeDateText(currentText) && currentText !== originalDates.get(target)?.formatted) return;
 
     if (target.matches(WATCH_DATE_SELECTOR)) {
-      const videoId = currentRouteVideoId();
-      if (!videoId) return;
-
       const timestamp = readCurrentWatchTimestamp(videoId);
       if (!timestamp) return;
       const storedTimestamp = storeTimestamp(videoId, timestamp);
@@ -393,8 +428,11 @@
       return;
     }
 
-    const videoId = resolveCardVideoId(target);
-    if (videoId) registerTarget(target, videoId);
+    registerTarget(target, videoId);
+  }
+
+  function targetVideoId(target) {
+    return target.matches(WATCH_DATE_SELECTOR) ? currentRouteVideoId() : resolveCardVideoId(target);
   }
 
   function scanRoot(root) {
@@ -447,6 +485,15 @@
   function startMutationObserver() {
     mutationObserver = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
+        if (mutation.type === "attributes") {
+          if (mutation.attributeName === "content" && mutation.target.matches('meta[itemprop="identifier"], meta[itemprop="datePublished"], meta[itemprop="uploadDate"]')) {
+            scheduleScan(document);
+          } else if (mutation.attributeName === "href") {
+            const renderer = mutation.target.closest(CARD_RENDERER_SELECTOR);
+            if (renderer) scheduleScan(renderer);
+          }
+          continue;
+        }
         if (mutation.type === "characterData") {
           if (mutation.target.parentElement) scheduleScan(mutation.target.parentElement);
           continue;
@@ -461,6 +508,8 @@
     });
     mutationObserver.observe(document, {
       characterData: true,
+      attributes: true,
+      attributeFilter: ["content", "href"],
       childList: true,
       subtree: true,
     });
@@ -520,6 +569,8 @@
       if (typeof responseText !== "string" || !responseText) return null;
 
       const parsedDocument = new DOMParser().parseFromString(responseText, "text/html");
+      const identifier = parsedDocument.querySelector('meta[itemprop="identifier"]')?.content;
+      if (identifier && identifier !== videoId) return null;
       return readTimestampFromDocument(parsedDocument);
     } catch (error) {
       if (timedOut) {
@@ -634,6 +685,7 @@
         timestampCache.has(videoId)
         || failedVideoIds.has(videoId)
         || activeRequests.has(videoId)
+        || ![...(targetsByVideoId.get(videoId) ?? [])].some((target) => target.isConnected && targetVideoId(target) === videoId)
       ) {
         continue;
       }

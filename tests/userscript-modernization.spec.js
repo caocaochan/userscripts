@@ -8,6 +8,10 @@ const OPENCC_UMD_PATH = path.resolve(
   "../node_modules/opencc-js/dist/umd/t2cn.js",
 );
 const SCRIPT_CONFIG = {
+  "duchinese-audio-downloader.user.js": {
+    grants: ["GM.addStyle", "GM.download", "GM.xmlHttpRequest"],
+    spa: false,
+  },
   "anilist-english-titles.user.js": {
     grants: [
       "GM.addStyle",
@@ -118,7 +122,7 @@ test("Yatsu uses the DOM sandbox and the latest optimized OpenCC bundle", () => 
   const source = readScript("yatsu-simplified-chinese.user.js");
   const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf8"));
 
-  expect(source).toContain("// @version      1.2.4");
+  expect(source).toMatch(/^\/\/ @version\s+\d+\.\d+\.\d+$/m);
   expect(source).toContain("// @sandbox      DOM");
   expect(source).toContain(
     "// @require      https://cdn.jsdelivr.net/npm/opencc-js@latest/dist/umd/t2cn.js",
@@ -133,7 +137,7 @@ test("Yatsu uses the DOM sandbox and the latest optimized OpenCC bundle", () => 
 test("AniList uses the modern DOM sandbox and Promise-based request API", () => {
   const source = readScript("anilist-english-titles.user.js");
 
-  expect(source).toContain("// @version      0.1.0");
+  expect(source).toMatch(/^\/\/ @version\s+\d+\.\d+\.\d+$/m);
   expect(source).toContain("// @sandbox      DOM");
   expect(source).toContain("// @run-at       document-start");
   expect(source).toContain("// @connect      graphql.anilist.co");
@@ -149,9 +153,12 @@ test("AniList uses the modern DOM sandbox and Promise-based request API", () => 
   expect(source).not.toMatch(/^\s+(?:onload|onerror|ontimeout):/m);
 });
 
-test("the modernization scope excludes DuChinese", () => {
-  expect(Object.keys(SCRIPT_CONFIG)).not.toContain("duchinese-audio-downloader.user.js");
-  expect(readScript("duchinese-audio-downloader.user.js")).toContain("// @version      0.4.1");
+test("every userscript is covered and explicitly declares its sandbox and frame policy", () => {
+  expect(Object.keys(SCRIPT_CONFIG).sort()).toEqual(fs.readdirSync(SCRIPTS_DIR).filter((file) => file.endsWith('.user.js')).sort());
+  for (const filename of Object.keys(SCRIPT_CONFIG)) {
+    expect(readScript(filename)).toMatch(/^\/\/ @sandbox\s+(?:DOM|raw)$/m);
+    expect(readScript(filename)).toContain('// @noframes');
+  }
 });
 
 test("SPA scripts use urlchange without History interception or URL polling", () => {

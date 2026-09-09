@@ -1,17 +1,19 @@
 // ==UserScript==
 // @name         Nyaa Group Hider + Highlighter
 // @namespace    https://nyaa.si/
-// @version      0.2.2
+// @version      0.2.3
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/nyaa-group-hider.user.js
 // @description  Hide or highlight Nyaa torrent rows from configured release groups.
 // @author       CaoCao
 // @match        https://nyaa.si/*
 // @run-at       document-idle
+// @sandbox      DOM
 // @grant        GM.addStyle
 // @grant        GM.getValues
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
+// @noframes
 // ==/UserScript==
 
 (() => {
@@ -268,7 +270,7 @@
   }
 
   function groupKey(groupName) {
-    return String(groupName || "").trim().toLocaleLowerCase();
+    return String(groupName || "").trim().toLowerCase();
   }
 
   function getGroupKeys(groups) {

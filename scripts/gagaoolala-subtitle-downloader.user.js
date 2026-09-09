@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         GagaOOLala Subtitle Downloader
 // @namespace    https://www.gagaoolala.com/
-// @version      0.1.3
+// @version      0.1.4
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for GagaOOLala subtitle tracks.
 // @author       CaoCao
 // @match        https://www.gagaoolala.com/*/videos/*
 // @run-at       document-start
+// @sandbox      raw
 // @grant        GM.addStyle
 // @grant        GM.download
 // @grant        GM.xmlHttpRequest
@@ -15,6 +16,7 @@
 // @grant        window.onurlchange
 // @connect      www.gagaoolala.com
 // @connect      *
+// @noframes
 // ==/UserScript==
 
 (() => {
@@ -30,6 +32,7 @@
   const TITLE_CLASS = "gagaoolala-subtitle-downloader-title";
   const STATUS_CLASS = "gagaoolala-subtitle-downloader-status";
   const REFRESH_DELAY_MS = 100;
+  const REQUEST_TIMEOUT_MS = 30000;
   const PLAY_ENDPOINT_PATTERN = /\/api\/v1\.0\/[^/]+\/videos\/[^/]+\/[^/?#]+\/play(?:[?#]|$)/;
   const LANGUAGE_BY_CODE = {
     en: "English",
@@ -208,6 +211,8 @@
   let menuCommandsInstalled = false;
   let currentRefreshKey = 0;
   const playbackPayloadCache = new Map();
+  // Our own playback request is already processed by refreshFromPage.
+  const pageFetch = window.fetch.bind(window);
 
   console.info("[GagaOOLala Subtitle Downloader] started", window.location.href);
   installFetchObserver();
@@ -257,7 +262,7 @@
   }
 
   async function handleObservedPlaybackPayload(url, payload) {
-    const route = parseRouteFromUrl(url) || parseCurrentRoute();
+    const route = parseRouteFromUrl(url);
     if (!route || !payload || payload.success !== 1) {
       return;
     }
@@ -265,9 +270,11 @@
     const key = getRouteKey(route);
     playbackPayloadCache.set(key, payload);
 
-    if (!lastState || getRouteKey(lastState) === key) {
+    const refreshKey = currentRefreshKey;
+    if (getRouteKey(parseCurrentRoute()) === key) {
       try {
-        const tracks = await extractTracksFromPlaybackPayload(payload, route);
+        const tracks = await extractTracksFromPlaybackPayload(payload);
+        if (refreshKey !== currentRefreshKey || getRouteKey(parseCurrentRoute()) !== key) return;
         renderState(buildState({
           route,
           metadata: lastState?.metadata || null,
@@ -402,11 +409,20 @@
       saveBlob(subtitle.blob, buildFilename(state, track, subtitle.extension));
       showToast(`Downloading ${track.name} subtitles`);
     } catch (error) {
+      if (track.type === "hls" || track.type === "segments") {
+        console.warn("[GagaOOLala Subtitle Downloader]", error);
+        showToast(error?.userFacing || `Could not download complete ${track.name} subtitles`);
+        return;
+      }
       console.warn("[GagaOOLala Subtitle Downloader]", error);
       try {
-        await downloadRawSubtitle(track, buildFilename(state, track, track.extension || "vtt"));
+        await downloadRawSubtitle(track, buildFilename(state, track, extensionFromUrl(track.url)));
         showToast(`Downloading ${track.name} subtitles`);
       } catch (downloadError) {
+        if (isCancelledDownload(downloadError)) {
+          showToast("Download cancelled");
+          return;
+        }
         console.warn("[GagaOOLala Subtitle Downloader]", downloadError);
         showToast(`Could not download ${track.name}; opening subtitle URL`);
         if (track.url) {
@@ -443,6 +459,12 @@
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   }
 
+  function isCancelledDownload(error) {
+    return [error, error?.error, error?.message, error?.details, error?.details?.current]
+      .some((reason) => typeof reason === "string"
+        && /^(?:USER_)?CANCEL(?:L)?ED$/i.test(reason.trim()));
+  }
+
   function showToast(message) {
     document.querySelector(`.${TOAST_CLASS}`)?.remove();
 
@@ -456,7 +478,10 @@
   }
 
   async function refreshFromPage() {
+    const refreshKey = ++currentRefreshKey;
     const route = parseCurrentRoute();
+    const isCurrent = () => refreshKey === currentRefreshKey
+      && getRouteKey(parseCurrentRoute()) === getRouteKey(route);
     if (!route) {
       renderState(buildState({
         route: null,
@@ -467,7 +492,6 @@
       return;
     }
 
-    const refreshKey = ++currentRefreshKey;
     renderState(buildState({
       route,
       source: "loading",
@@ -477,13 +501,13 @@
 
     try {
       const metadata = await fetchVideoMetadata(route);
-      if (refreshKey !== currentRefreshKey) {
+      if (!isCurrent()) {
         return;
       }
 
       const cachedPayload = playbackPayloadCache.get(getRouteKey(route));
       const playbackPayload = cachedPayload || await fetchPlaybackPayload(route);
-      if (refreshKey !== currentRefreshKey) {
+      if (!isCurrent()) {
         return;
       }
 
@@ -500,8 +524,8 @@
       }
 
       playbackPayloadCache.set(getRouteKey(route), playbackPayload);
-      const tracks = await extractTracksFromPlaybackPayload(playbackPayload, route);
-      if (refreshKey !== currentRefreshKey) {
+      const tracks = await extractTracksFromPlaybackPayload(playbackPayload);
+      if (!isCurrent()) {
         return;
       }
 
@@ -515,7 +539,7 @@
       }));
     } catch (error) {
       console.warn("[GagaOOLala Subtitle Downloader]", error);
-      if (refreshKey !== currentRefreshKey) {
+      if (!isCurrent()) {
         return;
       }
 
@@ -586,7 +610,7 @@
   function parseRouteFromUrl(value) {
     try {
       const url = new URL(value, window.location.origin);
-      const match = url.pathname.match(/^\/([^/]+)\/videos\/([^/]+)\/([^/?#]+)/);
+      const match = url.pathname.match(/^\/(?:api\/v1\.0\/)?([^/]+)\/videos\/([^/]+)\/([^/?#]+)/);
       if (!match) {
         return null;
       }
@@ -607,7 +631,8 @@
   }
 
   async function fetchVideoMetadata(route) {
-    const response = await fetch(`/api/v3.0/${encodeURIComponent(route.lang)}/videos/${encodeURIComponent(route.videoId)}/${encodeURIComponent(route.slug)}`, {
+    const response = await pageFetch(`/api/v3.0/${encodeURIComponent(route.lang)}/videos/${encodeURIComponent(route.videoId)}/${encodeURIComponent(route.slug)}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       credentials: "include",
       headers: {
         Accept: "application/json,*/*;q=0.8",
@@ -632,7 +657,8 @@
       }
     }
 
-    const response = await fetch(`${url.pathname}${url.search}`, {
+    const response = await pageFetch(`${url.pathname}${url.search}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       credentials: "include",
       headers: {
         Accept: "application/json,*/*;q=0.8",
@@ -647,12 +673,18 @@
     return response.json();
   }
 
-  async function extractTracksFromPlaybackPayload(payload, route) {
+  async function extractTracksFromPlaybackPayload(payload) {
     const data = payload?.data || {};
     const directTracks = findDirectSubtitleTracks(data);
-    const hlsTracks = data.m3u8 ? await extractHlsTracks(data.m3u8) : [];
-    const dashTracks = data.dash && hlsTracks.length < 1 ? await extractDashTracks(data.dash) : [];
-    return dedupeTracks([...hlsTracks, ...dashTracks, ...directTracks], route);
+    const hlsTracks = data.m3u8 ? await extractHlsTracks(data.m3u8).catch((error) => {
+      console.warn("[GagaOOLala Subtitle Downloader] Could not read HLS manifest.", error);
+      return [];
+    }) : [];
+    const dashTracks = data.dash && hlsTracks.length < 1 ? await extractDashTracks(data.dash).catch((error) => {
+      console.warn("[GagaOOLala Subtitle Downloader] Could not read DASH manifest.", error);
+      return [];
+    }) : [];
+    return dedupeTracks([...hlsTracks, ...dashTracks, ...directTracks]);
   }
 
   async function extractHlsTracks(masterUrl) {
@@ -700,11 +732,12 @@
       throw new Error("Could not parse DASH manifest XML.");
     }
 
-    const mpdBaseUrl = getTextContent(doc.querySelector("MPD > BaseURL"));
-    const periodBaseUrl = getTextContent(doc.querySelector("Period > BaseURL"));
+    const mpdBaseUrl = resolveOptionalUrl(getTextContent(doc.querySelector("MPD > BaseURL")), mpdUrl) || mpdUrl;
     const tracks = [];
 
     for (const adaptationSet of Array.from(doc.querySelectorAll("AdaptationSet"))) {
+      const period = adaptationSet.closest("Period");
+      const periodBaseUrl = resolveOptionalUrl(getTextContent(period?.querySelector(":scope > BaseURL")), mpdBaseUrl) || mpdBaseUrl;
       const mimeType = normalizeText(adaptationSet.getAttribute("mimeType"));
       const contentType = normalizeText(adaptationSet.getAttribute("contentType"));
       if (!isDashSubtitleAdaptation(contentType, mimeType, adaptationSet)) {
@@ -720,7 +753,8 @@
 
       for (const node of nodes) {
         const representationLabel = getTextContent(node.querySelector(":scope > Label")) || label;
-        const representationBase = resolveOptionalUrl(getTextContent(node.querySelector(":scope > BaseURL")), adaptationBase || periodBaseUrl || mpdBaseUrl || mpdUrl);
+        const representationBase = node === adaptationSet ? adaptationBase
+          : resolveOptionalUrl(getTextContent(node.querySelector(":scope > BaseURL")), adaptationBase || periodBaseUrl);
         const template = node.querySelector(":scope > SegmentTemplate") || adaptationTemplate;
         const resolvedName = representationLabel || normalizeText(node.getAttribute("id")) || label;
         const resolvedMimeType = normalizeText(node.getAttribute("mimeType")) || mimeType;
@@ -739,7 +773,7 @@
         }
 
         if (template) {
-          const segmentUrls = buildDashSegmentUrls(template, node, adaptationBase || periodBaseUrl || mpdBaseUrl || mpdUrl);
+          const segmentUrls = buildDashSegmentUrls(template, node, representationBase || adaptationBase || periodBaseUrl);
           if (segmentUrls.length) {
             tracks.push(normalizeTrack({
               type: "segments",
@@ -770,28 +804,50 @@
     }
 
     const representationId = representationNode.getAttribute("id") || "";
-    const startNumber = Number(template.getAttribute("startNumber")) || 1;
+    const startNumber = Number(template.getAttribute("startNumber") ?? 1);
+    const timescale = Number(template.getAttribute("timescale") ?? 1);
+    const presentationOffset = Number(template.getAttribute("presentationTimeOffset") ?? 0);
+    const period = template.closest("Period");
+    const durationSeconds = parseDashDuration(period?.getAttribute("duration"))
+      || (period?.parentElement?.querySelectorAll(":scope > Period").length === 1
+        ? parseDashDuration(period.parentElement.getAttribute("mediaPresentationDuration")) : 0);
+    const endTime = durationSeconds * timescale + presentationOffset;
+    if (!Number.isSafeInteger(startNumber) || startNumber < 0 || !Number.isFinite(timescale) || timescale <= 0) {
+      throw new Error("Invalid DASH segment numbering or timescale.");
+    }
     const timeline = template.querySelector("SegmentTimeline");
     const values = [];
 
     if (timeline) {
       let currentTime = 0;
-      for (const segment of Array.from(timeline.querySelectorAll("S"))) {
-        const duration = Number(segment.getAttribute("d")) || 0;
-        const repeat = Number(segment.getAttribute("r")) || 0;
+      const segments = [...timeline.querySelectorAll("S")];
+      for (const [segmentIndex, segment] of segments.entries()) {
+        const duration = Number(segment.getAttribute("d"));
+        const repeat = Number(segment.getAttribute("r") ?? 0);
         if (segment.hasAttribute("t")) {
           currentTime = Number(segment.getAttribute("t")) || 0;
         }
 
-        const count = repeat >= 0 ? repeat + 1 : 1;
+        const nextStart = segments[segmentIndex + 1]?.getAttribute("t");
+        const repeatEnd = nextStart === null || nextStart === undefined ? endTime : Number(nextStart);
+        const count = repeat >= 0 ? repeat + 1 : Math.ceil((repeatEnd - currentTime) / duration);
+        if (!Number.isFinite(duration) || duration <= 0 || !Number.isInteger(repeat) || repeat < -1
+          || !Number.isSafeInteger(count) || count < 1 || values.length + count > 10000) {
+          throw new Error("Unsupported or unbounded DASH subtitle timeline.");
+        }
         for (let index = 0; index < count; index += 1) {
           values.push(currentTime);
           currentTime += duration;
         }
       }
-    } else if (media.includes("$Number$")) {
-      for (let number = startNumber; number < startNumber + 500; number += 1) {
-        values.push(number);
+    } else {
+      const duration = Number(template.getAttribute("duration"));
+      const count = Math.ceil(durationSeconds * timescale / duration);
+      if (!Number.isFinite(duration) || duration <= 0 || !Number.isSafeInteger(count) || count < 1 || count > 10000) {
+        throw new Error("DASH subtitles need a bounded timeline or presentation duration.");
+      }
+      for (let index = 0; index < count; index += 1) {
+        values.push(index * duration);
       }
     }
 
@@ -804,6 +860,12 @@
 
       return new URL(path, baseUrl).toString();
     });
+  }
+
+  function parseDashDuration(value) {
+    const match = /^P(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(value ?? "");
+    return match ? Number(match[1] ?? 0) * 86400 + Number(match[2] ?? 0) * 3600
+      + Number(match[3] ?? 0) * 60 + Number(match[4] ?? 0) : 0;
   }
 
   function findDirectSubtitleTracks(value) {
@@ -907,7 +969,7 @@
       return { blob, extension: track.extension || extensionFromUrl(track.url) };
     }
 
-    let cues = [];
+    let cues;
     if (track.type === "hls") {
       cues = await buildCuesFromHlsTrack(track.url);
     } else if (track.type === "segments") {
@@ -945,11 +1007,9 @@
   async function buildCuesFromSegmentUrls(segmentUrls) {
     const cues = [];
     for (const url of segmentUrls) {
-      try {
-        cues.push(...parseWebVttCues(await requestText(url)));
-      } catch (error) {
-        console.warn("[GagaOOLala Subtitle Downloader] Could not fetch subtitle segment.", url, error);
-      }
+      const text = await requestText(url);
+      if (!looksLikeWebVtt(text)) throw new Error("Subtitle segment is not WebVTT.");
+      cues.push(...parseWebVttCues(text));
     }
 
     return dedupeCues(cues);
@@ -970,9 +1030,24 @@
   }
 
   function parseWebVttCues(text) {
+    const timestampMap = String(text || "").match(/^X-TIMESTAMP-MAP=(.*)$/m)?.[1]?.trim();
+    if (timestampMap) {
+      const local = parseTimestamp(timestampMap.match(/(?:^|,)LOCAL:([^,]+)/)?.[1]);
+      const mpegValue = timestampMap.match(/(?:^|,)MPEGTS:(\d+)$/)?.[1]
+        ?? timestampMap.match(/(?:^|,)MPEGTS:(\d+),/)?.[1];
+      const mpeg = mpegValue === undefined ? Number.NaN : Number(mpegValue);
+      // An arbitrary PES origin cannot be aligned to standalone SRT without
+      // the video timeline. Never silently strip a non-identity timing map.
+      if (!Number.isFinite(local) || !Number.isSafeInteger(mpeg)
+        || mpeg !== Math.round(local * 90) % (2 ** 33)) {
+        const error = new Error("Unsupported WebVTT timestamp mapping.");
+        error.userFacing = "This subtitle track needs video timing data for accurate SRT conversion.";
+        throw error;
+      }
+    }
     const normalized = String(text || "")
       .replace(/^\uFEFF/, "")
-      .replace(/\r/g, "")
+      .replace(/\r\n|\r/g, "\n")
       .replace(/^WEBVTT[^\n]*(?:\n|$)/i, "")
       .replace(/^X-TIMESTAMP-MAP=.*(?:\n|$)/gim, "");
     const blocks = normalized.split(/\n{2,}/);
@@ -980,15 +1055,13 @@
 
     for (const block of blocks) {
       const lines = block.split("\n").map((line) => line.trimEnd()).filter(Boolean);
-      while (lines.length && /^(NOTE|STYLE|REGION)(?:\s|$)/i.test(lines[0])) {
-        lines.shift();
-      }
+      if (lines.length && /^(NOTE|STYLE|REGION)(?:\s|$)/.test(lines[0])) continue;
 
       if (!lines.length) {
         continue;
       }
 
-      let timingIndex = lines.findIndex((line) => line.includes("-->"));
+      const timingIndex = lines.findIndex((line) => line.includes("-->"));
       if (timingIndex < 0) {
         continue;
       }
@@ -1000,7 +1073,7 @@
       }
 
       const textLines = lines.slice(timingIndex + 1)
-        .map((line) => line.replace(/<[^>]+>/g, "").trimEnd())
+        .map((line) => decodeCueText(line.replace(/<[^>]+>/g, "")).trimEnd())
         .filter((line) => !/^X-TIMESTAMP-MAP=/i.test(line));
       const cueText = textLines.join("\n").trim();
       if (!cueText) {
@@ -1041,17 +1114,16 @@
     ].join("\n")).join("\n\n") + "\n";
   }
 
-  function parseTimestamp(value) {
-    const parts = String(value || "").split(":");
-    const secondsPart = parts.pop() || "0";
-    const seconds = Number(secondsPart.replace(",", "."));
-    const minutes = Number(parts.pop() || 0);
-    const hours = Number(parts.pop() || 0);
-    if (![hours, minutes, seconds].every(Number.isFinite)) {
-      return Number.NaN;
-    }
+  function decodeCueText(text) {
+    const escapes = { amp: "&", lt: "<", gt: ">", nbsp: "\u00a0", lrm: "\u200e", rlm: "\u200f" };
+    return text.replace(/&(amp|lt|gt|nbsp|lrm|rlm);/g, (_, name) => escapes[name]);
+  }
 
-    return (hours * 3600 + minutes * 60 + seconds) * 1000;
+  function parseTimestamp(value) {
+    const match = /^(?:(\d{2,}):)?([0-5]\d):([0-5]\d)\.(\d{3})$/.exec(String(value));
+    if (!match) return Number.NaN;
+    return ((Number(match[1] ?? 0) * 60 + Number(match[2])) * 60 + Number(match[3])) * 1000
+      + Number(match[4]);
   }
 
   function formatSrtTimestamp(milliseconds) {
@@ -1150,6 +1222,7 @@
     const response = await GM.xmlHttpRequest({
       method: "GET",
       url,
+      timeout: REQUEST_TIMEOUT_MS,
       headers: {
         Accept: "text/vtt,application/vnd.apple.mpegurl,application/dash+xml,text/plain,*/*;q=0.8",
       },
@@ -1167,6 +1240,7 @@
       method: "GET",
       url,
       responseType: "blob",
+      timeout: REQUEST_TIMEOUT_MS,
     });
 
     if (response.status < 200 || response.status >= 300) {
@@ -1222,7 +1296,10 @@
   }
 
   function observeNavigation() {
-    window.addEventListener("urlchange", () => scheduleRefresh(0));
+    window.addEventListener("urlchange", () => {
+      currentRefreshKey += 1;
+      scheduleRefresh(0);
+    });
     document.addEventListener("pointerdown", onDocumentPointerDown, true);
     document.addEventListener("keydown", onDocumentKeyDown, true);
   }
@@ -1283,6 +1360,7 @@
 
     menuCommandsInstalled = true;
     GM.registerMenuCommand("Refresh subtitle panel", () => {
+      playbackPayloadCache.delete(getRouteKey(parseCurrentRoute()));
       refreshFromPage();
       showPanel();
     });

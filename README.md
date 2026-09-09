@@ -6,10 +6,25 @@ Collection of my userscripts.
 
 Userscripts in this repo can be installed directly from the raw file URL. They target current Tampermonkey 5.3 or newer; compatibility with other userscript managers is not maintained.
 
+Use a current desktop Chromium or Firefox release. Every script declares its required sandbox and runs only in the top frame. Scripts that need page JavaScript or page-context font access use `raw`; DOM-only scripts use `DOM`.
+
+## Development
+
+Use Node.js 24 for the development tools. Userscripts remain standalone files with no build step.
+
+```powershell
+npm ci
+npx playwright install chromium
+npm run lint
+npm test
+```
+
+ESLint's flat configuration checks all 11 userscripts for correctness and modern conventions. Playwright exercises browser behavior with deterministic site fixtures and mocked Tampermonkey APIs. The Windows handler test intercepts process launches and skips on other platforms. These checks do not replace testing with Tampermonkey on authenticated live sites. See [the audit findings](AUDIT.md) for fixes and remaining limits.
+
 ## Scripts
 
 - **English Titles for AniList**
-  Adds a smaller second title line beneath anime titles on every AniList user anime-list page, across table, compact, and card layouts. It prefers AniList's official English title, falls back to romaji when English is unavailable, and suppresses equivalent duplicates. The script uses one anonymous, read-only AniList API request per visited username, caches results only for the current page lifetime, and stores nothing persistently. It uses modern Promise-based Tampermonkey APIs and is compatible with the repository's Tampermonkey 5.3+ target while being authored against current Tampermonkey 5.6.x.
+  Adds a smaller second title line beneath anime titles on every AniList user anime-list page, across table, compact, and card layouts. It prefers AniList's official English title, falls back to romaji when English is unavailable, and suppresses equivalent duplicates. The script loads across AniList so navigation from a profile or home page into an anime list also works; it requests titles only on anime-list routes. It makes an anonymous, read-only API request per visited username, caches successful results for the current page lifetime, and stores nothing persistently. Requests cancelled by navigation may be retried when returning to that user; other failures are not automatically retried. Reused links update when their anime ID or primary title changes.
 
 - **Du Chinese & Yomu Yomu Audio Downloader**
   Runs on `https://duchinese.net/lessons/*` and `https://yomuyomu.app/lessons/*` pages and adds a download icon beside the fixed play control. Both sites share the same lesson player, so one script covers them. Downloads use the audio URL already supplied to the lesson player. Standalone lessons are named from the lesson title; course audio adds a sortable chapter suffix such as `Chapter 01`.
@@ -17,7 +32,7 @@ Userscripts in this repo can be installed directly from the raw file URL. They t
 - **Plex Open in mpv**
   Adds an `Open in mpv` button to local Plex detail pages and small `mpv` buttons on Home/library media cards at `127.0.0.1:32400` / `localhost:32400`, resolving the best original media parts and handing them to an installed `plex-mpv://` protocol handler.
 
-  Requires a working `plex-mpv://` protocol handler on the machine. Season pages open an ordered M3U playlist in mpv, and show pages open the first season. A generic Windows handler is included in [`handlers/windows`](handlers/windows), with install notes in [`handlers/windows/README.md`](handlers/windows/README.md) and a registry template at [`handlers/windows/install-plex-mpv-handler.reg`](handlers/windows/install-plex-mpv-handler.reg). Browsers/userscripts cannot launch `mpv.exe` directly without an external protocol handler or helper.
+  Requires a working `plex-mpv://` protocol handler on the machine. Season pages open an ordered M3U playlist in mpv, and show pages open the first season. Multipart movies and episodes preserve all parts of the selected media version in their original order. A generic Windows handler is included in [`handlers/windows`](handlers/windows), with install notes in [`handlers/windows/README.md`](handlers/windows/README.md) and a registry template at [`handlers/windows/install-plex-mpv-handler.reg`](handlers/windows/install-plex-mpv-handler.reg). Browsers/userscripts cannot launch `mpv.exe` directly without an external protocol handler or helper.
 
 - **Reddit Default Sorting**
   Redirects `reddit.com`, `www.reddit.com`, and `sh.reddit.com` homepages to Top posts from Today, and bare `/r/subreddit` pages to New. Matching links are rewritten on pointer or keyboard activation so Reddit navigates directly to the preferred feed without first loading the default route. The OP body and comment bodies on comments pages are set to `1rem` without changing titles, author metadata, controls, or feed-card previews.
@@ -36,6 +51,8 @@ Userscripts in this repo can be installed directly from the raw file URL. They t
 
 - **GagaOOLala Subtitle Downloader**
   Adds a floating subtitles panel to `https://www.gagaoolala.com/*/videos/*` video pages and downloads available WebVTT subtitle tracks as `.srt` files. GagaOOLala exposes playback subtitle manifests only to logged-in sessions, so sign in first before refreshing the panel or starting playback.
+
+  Segmented downloads require every segment to succeed. Tracks with non-identity HLS timestamp maps need video timing data and report that limitation instead of producing inaccurate SRT; MP4-wrapped subtitle segments are not decoded. The refresh menu fetches fresh playback URLs when cached links have expired.
 
 - **YouTube Exact Dates**
   Replaces English relative video dates on desktop `https://www.youtube.com/*` watch pages and video cards with exact browser-local `YYYY-MM-DD HH:mm` timestamps. Watch pages use metadata already in the document, and playlist pages batch their newest entries through YouTube's lightweight Atom feed. Other uncached cards fetch watch-page metadata only when they approach the viewport, with a single-request fallback queue, per-video deduplication, and a bounded persistent cache. Comments, community posts, and live chat are left unchanged.

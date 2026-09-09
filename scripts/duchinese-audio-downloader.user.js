@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Du Chinese & Yomu Yomu Audio Downloader
 // @namespace    https://duchinese.net/
-// @version      0.4.1
+// @version      0.4.2
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/duchinese-audio-downloader.user.js
 // @description  Adds an audio download button beside the Du Chinese and Yomu Yomu lesson players.
@@ -11,11 +11,13 @@
 // @match        https://yomuyomu.app/lessons/*
 // @match        https://www.yomuyomu.app/lessons/*
 // @run-at       document-idle
+// @sandbox      DOM
 // @grant        GM.addStyle
 // @grant        GM.download
 // @grant        GM.xmlHttpRequest
 // @connect      duchinese.net
 // @connect      yomuyomu.app
+// @noframes
 // ==/UserScript==
 
 (() => {

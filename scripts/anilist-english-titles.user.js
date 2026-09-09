@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         English Titles for AniList
 // @namespace    https://anilist.co/
-// @version      0.1.0
+// @version      0.1.1
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/anilist-english-titles.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/anilist-english-titles.user.js
 // @description  Adds English titles beneath anime titles on AniList user lists, with romaji fallback.
 // @author       CaoCao
-// @match        https://anilist.co/user/*/animelist*
+// @match        https://anilist.co/*
 // @tag          anime
 // @tag          enhancement
 // @run-at       document-start
@@ -79,7 +79,6 @@
   let domObserver = null;
   let syncFrame = 0;
   let routeGeneration = 0;
-  let styleElement = null;
 
   function parseAnimeListRoute(url = location.href) {
     let parsedUrl;
@@ -110,7 +109,9 @@
 
   function parseMediaId(anchor) {
     try {
-      const match = new URL(anchor.href, location.origin).pathname.match(ANIME_MEDIA_PATH_PATTERN);
+      const url = new URL(anchor.href, location.origin);
+      if (url.origin !== location.origin) return null;
+      const match = url.pathname.match(ANIME_MEDIA_PATH_PATTERN);
       if (!match) return null;
       const mediaId = Number(match[1]);
       return Number.isSafeInteger(mediaId) && mediaId > 0 ? mediaId : null;
@@ -206,9 +207,19 @@
   }
 
   function mutationsCanAffectTitles(mutations) {
-    return mutations.some((mutation) => (
-      [...mutation.addedNodes, ...mutation.removedNodes].some(nodeCanAffectTitles)
-    ));
+    return mutations.some((mutation) => {
+      const element = mutation.target.nodeType === Node.ELEMENT_NODE
+        ? mutation.target : mutation.target.parentElement;
+      if (element?.closest(`.${SECONDARY_CLASS}`)) return false;
+      if (mutation.type === "attributes") return element.matches(TITLE_LINK_SELECTOR);
+      if (element?.closest(TITLE_LINK_SELECTOR)) {
+        return mutation.type === "characterData"
+          || [...mutation.addedNodes, ...mutation.removedNodes].some((node) => (
+            node.nodeType !== Node.ELEMENT_NODE || !node.classList.contains(SECONDARY_CLASS)
+          ));
+      }
+      return [...mutation.addedNodes, ...mutation.removedNodes].some(nodeCanAffectTitles);
+    });
   }
 
   function startDomObserver() {
@@ -218,6 +229,9 @@
     });
     domObserver.observe(document, {
       childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["href"],
       subtree: true,
     });
   }
@@ -234,6 +248,8 @@
   function abortActiveRequest() {
     if (!activeRequest) return;
     activeRequest.abortedByRoute = true;
+    // A cancelled attempt must not block this user for the rest of the tab.
+    attemptedUsers.delete(activeRequest.cacheKey);
     activeRequest.request.abort();
   }
 
@@ -301,7 +317,7 @@
 
     const requestState = {
       request,
-      generation,
+      cacheKey: route.cacheKey,
       abortedByRoute: false,
       timedOut: false,
     };
@@ -373,7 +389,7 @@
   }
 
   async function main() {
-    styleElement = GM.addStyle(CSS);
+    GM.addStyle(CSS);
 
     if (window.onurlchange === null) {
       window.addEventListener("urlchange", () => {

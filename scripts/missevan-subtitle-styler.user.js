@@ -1,18 +1,20 @@
 // ==UserScript==
 // @name         Missevan Subtitle Styler
 // @namespace    https://www.missevan.com/
-// @version      0.1.10
+// @version      0.1.11
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-subtitle-styler.user.js
 // @description  Adds readable, customizable subtitle styling controls to Missevan sound player pages.
 // @author       CaoCao
 // @match        https://www.missevan.com/sound/player*
 // @run-at       document-idle
+// @sandbox      raw
 // @grant        GM.addStyle
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
 // @grant        window.onurlchange
+// @noframes
 // ==/UserScript==
 
 (() => {
@@ -448,7 +450,7 @@
     next.lineHeight = clampNumber(next.lineHeight, 1, 1.8, DEFAULT_SETTINGS.lineHeight);
     next.verticalPosition = clampNumber(next.verticalPosition, 24, 180, DEFAULT_SETTINGS.verticalPosition);
     next.backgroundOpacity = clampNumber(next.backgroundOpacity, 0, 1, DEFAULT_SETTINGS.backgroundOpacity);
-    next.shadowStrength = Object.prototype.hasOwnProperty.call(SHADOWS, next.shadowStrength) ? next.shadowStrength : DEFAULT_SETTINGS.shadowStrength;
+    next.shadowStrength = Object.hasOwn(SHADOWS, next.shadowStrength) ? next.shadowStrength : DEFAULT_SETTINGS.shadowStrength;
     next.useRoleColors = Boolean(next.useRoleColors);
     next.textColor = /^#[0-9a-f]{6}$/i.test(String(next.textColor || "")) ? String(next.textColor) : DEFAULT_SETTINGS.textColor;
     return next;
@@ -800,7 +802,7 @@
       }
 
       function onResponse(event) {
-        let payload = null;
+        let payload;
         try {
           payload = JSON.parse(typeof event.detail === "string" ? event.detail : "{}");
         } catch (error) {
@@ -808,7 +810,7 @@
           return;
         }
 
-        if (String(payload.id || "") !== id) {
+        if (!payload || typeof payload !== "object" || String(payload.id || "") !== id) {
           return;
         }
 

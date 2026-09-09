@@ -1,0 +1,42 @@
+# Userscript audit — 2026-09-09
+
+Recommendation: retain standalone userscripts and the documented Tampermonkey 5.3+ target, with current desktop browsers, explicit execution contexts, Promise-based privileged APIs, and automated correctness checks. All 11 userscripts and the Windows Plex handler were reviewed.
+
+## Findings and changes
+
+The functional findings below have high confidence from source inspection and deterministic regression tests. Live authenticated site behavior was not verified in this audit.
+
+| Script | Finding and resulting behavior |
+| --- | --- |
+| AniList | Reused links kept stale secondary titles because only inserted/removed elements were observed. Text and `href` changes now update the decoration without an observer feedback loop. Cancelling a request no longer permanently blocks that user's titles. The script loads across AniList so entering a list through SPA navigation can initialize it; requests remain restricted to list routes. External-origin media links are ignored. |
+| Du Chinese / Yomu Yomu | Existing download/cancellation handling passed review and fixtures. Added explicit DOM sandbox and top-frame policy. |
+| GagaOOLala | Late playback/manifest responses could replace a newer route's panel. Observed API URLs were incorrectly parsed as the current video. Both paths now validate route identity. Internal playback fetches bypass the page-fetch observer to prevent duplicate manifest processing. Manual refresh invalidates cached playback URLs. |
+| GagaOOLala parsing | Complete NOTE blocks are skipped; WebVTT escapes are decoded and timestamps validated. CR/CRLF subtitle lines are normalized. Segment failure now fails the download, preventing silent partial files and fallback downloads of a single segment. Non-identity timestamp maps report that accurate conversion needs video timing data. Raw fallback uses the source extension. A failing HLS manifest no longer hides direct tracks or prevents DASH fallback. |
+| GagaOOLala DASH | Relative BaseURLs now resolve through each MPD/Period/AdaptationSet/Representation. Segment generation uses bounded duration/timeline data, including padded numbering and negative repeats, with a 10,000-segment safety bound. The previous speculative 500-URL fallback was removed. |
+| iQIYI | Fetched HTML could be assigned to a different episode after navigation. Page requests now capture their URL, use cancellation/timeouts, and reject superseded completions. Old embedded metadata displays a loading state while the current page is fetched. Download cancellation stops fallbacks; empty/unexpected fallback blobs and invalid/non-HTTP subtitle URLs are rejected. Runtime retry counters reset on navigation. |
+| JJWXC | Existing CSS behavior passed review and fixtures; no functional changes. |
+| Missevan | A JSON `null` response from the font helper could throw in an event listener. Responses are now validated before property access. Uses `Object.hasOwn`; execution context and frame policy are explicit. |
+| Nyaa | Group matching now uses locale-independent lowercasing, avoiding machine-locale-dependent results. Added explicit DOM sandbox and top-frame policy. Existing storage/rule fixtures pass. |
+| Plex | Whitespace normalization changed valid filenames; exact path characters are now preserved, while newline/NUL paths are rejected. Selection now chooses a complete media version and retains its ordered parts and durations. Card scans preserve the busy state while a launch is pending. Metadata fetches have a timeout; removed unused code and used nonmutating `toSorted`. |
+| Windows handler | A decoded media argument beginning with `--` could be interpreted as an mpv option. An explicit `--` separator now precedes media arguments. The regression test mocks `Start-Process`; it does not launch mpv or alter protocol registration. |
+| Reddit | Existing routing and font behavior passed review and fixtures; no functional changes. |
+| Yatsu | Removing adjacent inline text left conversion based on a phrase that no longer existed. Removal now invalidates the surviving phrase container while preserving source text and avoiding feedback. |
+| YouTube | Recycled cards could retain another video's timestamp; link changes now rebind the target and restore its relative date before conversion. Late metadata attribute updates trigger scanning. Queued requests without connected targets are discarded, and fetched metadata identifying another video is rejected. Accessible date attributes follow replacements. |
+
+Changed userscripts have patch-version increments. Nothing was published, committed, or installed into a browser.
+
+## Modern conventions and evidence
+
+ESLint 10 uses a flat configuration with recommended correctness rules plus `no-var`, `prefer-const`, `prefer-object-has-own`, object shorthand, and strict equality with deliberate nullish comparisons. It covers all userscripts; the metadata test now includes Du Chinese and checks explicit sandbox/frame declarations. Configuration follows the [official ESLint documentation](https://eslint.org/docs/latest/use/configure/configuration-files).
+
+The manager target remains 5.3+. The [Tampermonkey sandbox documentation](https://www.tampermonkey.net/documentation.php?q=sandbox) distinguishes DOM access from page JavaScript access; `raw` is explicit for GagaOOLala, iQIYI, and Missevan. Native requests use `AbortSignal` timeouts/cancellation. Privileged requests retain manual abort timers when fetch mode is required, because [Tampermonkey documents that its `timeout` option does not work in Chrome fetch mode](https://www.tampermonkey.net/documentation.php?q=GM_xmlhttpRequest). New Blob-based `GM.download` inputs require a newer manager, so existing Blob URL downloads remain compatible with the stated target. This version restriction is [documented by Tampermonkey](https://www.tampermonkey.net/documentation.php?q=GM_download).
+
+Parser checks use the [WebVTT specification](https://www.w3.org/TR/webvtt1/), [HLS timestamp mapping rules](https://www.rfc-editor.org/rfc/rfc8216#section-3.5), and [DASH-IF timing guidance](https://dashif.org/Guidelines-TimingModel/). The mpv argument separator follows the [official manual](https://mpv.io/manual/master/#usage).
+
+## Validation and remaining limits
+
+The original 80-test suite passed before edits. Final validation: **103 tests passed**, and **ESLint passed with zero warnings**. Added browser regressions cover the behavior above, and a Windows PowerShell test checks argument handling without process launches. Run `npm run lint` and `npm test`. Node.js 24.15.0 and the installed Playwright Chromium were used locally; this is not a Firefox or real-extension integration test.
+
+Live DOM selectors, authenticated playback payloads, CDN permissions, Tampermonkey sandbox injection, and protocol launching still need live-site verification. GagaOOLala's DASH support covers directly downloadable text and bounded plain-WebVTT segment templates, not a general DASH demuxer. MP4-wrapped text, encrypted/byte-range HLS segments, external initialization headers, and mappings requiring the video's PES origin need additional format support and representative fixtures. The parser deliberately refuses unsupported segment data rather than claiming a complete SRT.
+
+Yatsu's floating `opencc-js@latest` dependency remains an intentional existing policy, with its reproducibility/integrity implications documented in README. Open shadow roots attached to already-connected hosts without any subsequent observable DOM mutation are still not discoverable by its MutationObserver alone. YouTube's bounded persistent cache is written per tab; simultaneous tabs may overwrite one another's additions, causing refetches rather than incorrect per-video dates.

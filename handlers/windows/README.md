@@ -30,6 +30,8 @@ Start-Process 'plex-mpv:///?path=C%3A%5CMedia%5CTest%20Movie.mkv'
 
 Current userscript versions prefer Plex's local `Part.file` path and send it as `path=`. The handler still accepts older `url=` launches for compatibility.
 
+Multipart movies and episodes use `playlist=` just like seasons. The handler passes an explicit `--` before media arguments so decoded input cannot become an mpv option. If you copied the handler outside this repository, copy the updated `openInMPV.ps1` to that installed location as well.
+
 The handler writes a sanitized log to:
 
 ```text

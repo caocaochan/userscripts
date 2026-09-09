@@ -262,8 +262,59 @@ async function formatInBrowser(page, timestamp) {
   }, timestamp);
 }
 
+test("recycled cards update dates and accessible attributes when only the link changes", async ({ page }) => {
+  const first = '2025-01-01T10:00:00Z';
+  const second = '2025-02-01T12:00:00Z';
+  await loadFixture(page, {
+    body: modernCard(VIDEO_A, '1 day ago', 'recycled'),
+    cache: [[VIDEO_A, first], [VIDEO_B, second]],
+  });
+  const date = page.locator('#recycled span');
+  await expect(date).toHaveText(await formatInBrowser(page, first));
+  await page.locator('#recycled a').evaluate((anchor, id) => { anchor.href = `/watch?v=${id}`; }, VIDEO_B);
+  const formatted = await formatInBrowser(page, second);
+  await expect(date).toHaveText(formatted);
+  await expect(date).toHaveAttribute('aria-label', formatted);
+  await expect(date).toHaveAttribute('title', formatted);
+});
+
+test("watch dates react to late metadata attribute updates", async ({ page }) => {
+  await loadFixture(page, {
+    url: `https://www.youtube.com/watch?v=${VIDEO_A}`,
+    body: '<ytd-watch-metadata><yt-formatted-string id="info"><span>1 day ago</span></yt-formatted-string></ytd-watch-metadata>',
+    head: `<meta itemprop="identifier" content="${VIDEO_A}"><meta itemprop="datePublished" content="">`,
+  });
+  await page.waitForTimeout(350);
+  await page.evaluate(() => { document.querySelector('meta[itemprop="datePublished"]').content = '2025-01-01T10:00:00Z'; });
+  await expect(page.locator('#info span')).toHaveText(await formatInBrowser(page, '2025-01-01T10:00:00Z'));
+});
+
+test("queued requests for removed cards are discarded", async ({ page }) => {
+  await loadFixture(page, {
+    body: modernCard(VIDEO_A, '1 day ago', 'first') + modernCard(VIDEO_B, '2 days ago', 'removed'),
+    responses: { [VIDEO_A]: { deferred: true, timestamp: '2025-01-01T10:00:00Z' } },
+  });
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
+  await page.locator('#removed').evaluate((card) => card.remove());
+  await page.evaluate((id) => window.__resolveRequest(id), VIDEO_A);
+  await expect(page.locator('#first span')).toHaveText(await formatInBrowser(page, '2025-01-01T10:00:00Z'));
+  expect(await page.evaluate(() => window.__gmCalls.requests.map((call) => call.videoId))).toEqual([VIDEO_A]);
+});
+
+test("redirected metadata for another video is never cached against the requested id", async ({ page }) => {
+  await loadFixture(page, {
+    body: modernCard(VIDEO_A, '1 day ago', 'wrong-video'),
+    responses: { [VIDEO_A]: { html: `<meta itemprop="identifier" content="${VIDEO_B}"><meta itemprop="datePublished" content="2025-01-01T10:00:00Z">` } },
+  });
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.activeRequests)).toBe(0);
+  await page.waitForTimeout(50);
+  await expect(page.locator('#wrong-video span')).toHaveText('1 day ago');
+  expect(await page.evaluate(() => window.__storedCache)).toEqual([]);
+});
+
 test("metadata and repository catalog expose the intended Tampermonkey integration", () => {
-  expect(SCRIPT_SOURCE).toContain("// @version      0.1.2");
+  expect(SCRIPT_SOURCE).toMatch(/^\/\/ @version\s+\d+\.\d+\.\d+$/m);
   expect(SCRIPT_SOURCE).toContain("// @match        https://www.youtube.com/*");
   expect(SCRIPT_SOURCE).toContain("// @run-at       document-start");
   expect(SCRIPT_SOURCE).toContain("// @sandbox      DOM");

@@ -137,9 +137,43 @@ async function loadFixture(page, {
   await page.addScriptTag({ path: SCRIPT_PATH });
 }
 
+test("reused links respond to href and primary text changes without observer feedback", async ({ page }) => {
+  await loadFixture(page, {
+    body: '<div class="medialist"><div class="list-entries"><div class="title"><a href="/anime/1/a">日本語</a></div></div></div>',
+    responses: [titleResponse([
+      { mediaId: 1, english: "First" },
+      { mediaId: 2, english: "Second" },
+    ])],
+  });
+  const secondary = page.locator('.anilist-english-titles-secondary');
+  await expect(secondary).toHaveText("First");
+  await page.locator('.title a').evaluate((anchor) => { anchor.href = '/anime/2/b'; });
+  await expect(secondary).toHaveText("Second");
+  await page.locator('.title a').evaluate((anchor) => { anchor.firstChild.data = 'Second'; });
+  await expect(secondary).toHaveCount(0);
+  await page.locator('.title a').evaluate((anchor) => { anchor.textContent = '別名'; });
+  await expect(secondary).toHaveText("Second");
+  expect(await page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
+});
+
+test("returning to a user whose request was cancelled starts a fresh request", async ({ page }) => {
+  await loadFixture(page, {
+    body: '<div class="medialist"><div class="list-entries"><div class="title"><a href="/anime/1/a">日本語</a></div></div></div>',
+    responses: [{ deferred: true }, titleResponse([{ mediaId: 1, english: "Returned" }])],
+  });
+  await expect.poll(() => page.evaluate(() => window.__gmCalls.requests.length)).toBe(1);
+  await page.evaluate(() => {
+    history.pushState({}, '', '/home');
+    window.dispatchEvent(new Event('urlchange'));
+    history.pushState({}, '', '/user/TestUser/animelist');
+    window.dispatchEvent(new Event('urlchange'));
+  });
+  await expect(page.locator('.anilist-english-titles-secondary')).toHaveText('Returned');
+});
+
 test("metadata and manifest expose the intended modern Tampermonkey integration", () => {
-  expect(SCRIPT_SOURCE).toContain("// @version      0.1.0");
-  expect(SCRIPT_SOURCE).toContain("// @match        https://anilist.co/user/*/animelist*");
+  expect(SCRIPT_SOURCE).toMatch(/^\/\/ @version\s+\d+\.\d+\.\d+$/m);
+  expect(SCRIPT_SOURCE).toContain("// @match        https://anilist.co/*");
   expect(SCRIPT_SOURCE).toContain("// @tag          anime");
   expect(SCRIPT_SOURCE).toContain("// @tag          enhancement");
   expect(SCRIPT_SOURCE).toContain("// @run-at       document-start");

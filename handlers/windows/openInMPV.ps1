@@ -51,7 +51,8 @@ function Quote-ProcessArgument {
 function Start-Mpv {
   param([string[]] $Arguments)
 
-  $quotedArguments = $Arguments | ForEach-Object { Quote-ProcessArgument $_ }
+  # Protocol input is media, even when it starts with an option prefix.
+  $quotedArguments = @("--") + @($Arguments | ForEach-Object { Quote-ProcessArgument $_ })
   Start-Process -FilePath $mpvPath -ArgumentList $quotedArguments
 }
 

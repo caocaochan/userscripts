@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Yatsu Reader — Traditional to Simplified Chinese
 // @namespace    https://app.yatsu.moe/
-// @version      1.2.4
+// @version      1.2.5
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/yatsu-simplified-chinese.user.js
 // @description  Converts Traditional Chinese text on app.yatsu.moe to Simplified orthography using OpenCC without regional vocabulary localization.
@@ -275,7 +275,7 @@
     function findContainer(node) {
       if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE && node.host) return node;
 
-      let element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+      const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
       if (!element) return null;
       if (element.closest('head')) return null;
 
@@ -353,6 +353,8 @@
           scheduleConversion(mutation.target);
         } else if (mutation.type === 'childList') {
           if (mutationAffectsTitle(mutation)) titleDirty = true;
+          // Removing inline text can change how the surviving phrase converts.
+          if (mutation.removedNodes.length) scheduleConversion(mutation.target);
           for (const node of mutation.addedNodes) scheduleConversion(node);
         }
       }
