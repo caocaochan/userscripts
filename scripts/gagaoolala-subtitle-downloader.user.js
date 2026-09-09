@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GagaOOLala Subtitle Downloader
 // @namespace    https://www.gagaoolala.com/
-// @version      0.1.5
+// @version      0.1.6
 // @updateURL    https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @downloadURL  https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/gagaoolala-subtitle-downloader.user.js
 // @description  Adds SRT download buttons for GagaOOLala subtitle tracks.
@@ -710,11 +710,23 @@
       console.warn("[GagaOOLala Subtitle Downloader] Could not read HLS manifest.", error);
       return [];
     }) : [];
-    const dashTracks = data.dash && hlsTracks.length < 1 ? await extractDashTracks(data.dash).catch((error) => {
+    const dashTracks = data.dash ? await extractDashTracks(data.dash).catch((error) => {
       console.warn("[GagaOOLala Subtitle Downloader] Could not read DASH manifest.", error);
       return [];
     }) : [];
-    return dedupeTracks([...hlsTracks, ...dashTracks, ...directTracks]);
+    // A standalone DASH VTT uses presentation time, even when the same file
+    // carries an X-TIMESTAMP-MAP for its separate HLS rendition.
+    const presentationTracks = dashTracks.filter((track) => track.type === "vtt" && track.timeline === "presentation");
+    const preferredTracks = hlsTracks.map((track) => {
+      const matches = presentationTracks.filter((candidate) => track.lang && candidate.lang === track.lang);
+      if (matches.length === 1 && hlsTracks.filter((candidate) => candidate.lang === track.lang).length === 1) {
+        return { ...matches[0], name: track.name };
+      }
+      return track;
+    });
+    return dedupeTracks([
+      ...preferredTracks, ...presentationTracks, ...(hlsTracks.length ? [] : dashTracks), ...directTracks,
+    ]);
   }
 
   async function extractHlsTracks(masterUrl) {
@@ -767,6 +779,15 @@
 
     for (const adaptationSet of Array.from(doc.querySelectorAll("AdaptationSet"))) {
       const period = adaptationSet.closest("Period");
+      const mpd = period?.parentElement;
+      const periodStart = period?.getAttribute("start");
+      // Limit presentation-time conversion to a single on-demand period at
+      // zero, without inherited segment indexing or presentation offsets.
+      const presentationTimeline = mpd?.getAttribute("type") !== "dynamic"
+        && mpd?.querySelectorAll(":scope > Period").length === 1
+        && (periodStart === null || /^PT0(?:\.0+)?S$/.test(periodStart))
+        && !mpd.querySelector("SegmentBase, SegmentList")
+        && !period.querySelector(":scope > SegmentTemplate");
       const periodBaseUrl = resolveOptionalUrl(getTextContent(period?.querySelector(":scope > BaseURL")), mpdBaseUrl) || mpdBaseUrl;
       const mimeType = normalizeText(adaptationSet.getAttribute("mimeType"));
       const contentType = normalizeText(adaptationSet.getAttribute("contentType"));
@@ -798,6 +819,7 @@
             extension: isWebVttUrl(representationBase) || /vtt/i.test(resolvedMimeType) ? "srt" : extensionFromUrl(representationBase),
             raw: !(isWebVttUrl(representationBase) || /vtt/i.test(resolvedMimeType)),
             source: "dash-direct",
+            timeline: presentationTimeline ? "presentation" : "",
           }));
           continue;
         }
@@ -967,6 +989,7 @@
       extension: track.extension || "srt",
       raw: Boolean(track.raw),
       source: track.source || "",
+      timeline: track.timeline || "",
     };
   }
 
@@ -1006,7 +1029,7 @@
       cues = await buildCuesFromSegmentUrls(track.segmentUrls);
     } else {
       const text = await requestText(track.url);
-      cues = parseWebVttCues(text);
+      cues = parseWebVttCues(text, { timeline: track.timeline });
     }
 
     if (!cues.length) {
@@ -1059,8 +1082,9 @@
     return urls;
   }
 
-  function parseWebVttCues(text) {
-    const timestampMap = String(text || "").match(/^X-TIMESTAMP-MAP=(.*)$/m)?.[1]?.trim();
+  function parseWebVttCues(text, { timeline = "hls" } = {}) {
+    const timestampMap = timeline === "presentation" ? null
+      : String(text || "").match(/^X-TIMESTAMP-MAP=(.*)$/m)?.[1]?.trim();
     if (timestampMap) {
       const local = parseTimestamp(timestampMap.match(/(?:^|,)LOCAL:([^,]+)/)?.[1]);
       const mpegValue = timestampMap.match(/(?:^|,)MPEGTS:(\d+)$/)?.[1]
