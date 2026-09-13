@@ -8,6 +8,10 @@ const OPENCC_UMD_PATH = path.resolve(
   "../node_modules/opencc-js/dist/umd/t2cn.js",
 );
 const SCRIPT_CONFIG = {
+  "duchinese-yomitan.user.js": {
+    grants: ["none"],
+    spa: false,
+  },
   "duchinese-audio-downloader.user.js": {
     grants: ["GM.addStyle", "GM.download", "GM.xmlHttpRequest"],
     spa: false,

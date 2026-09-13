@@ -19,7 +19,9 @@ npm run lint
 npm test
 ```
 
-ESLint's flat configuration checks all 11 userscripts for correctness and modern conventions. Playwright exercises browser behavior with deterministic site fixtures and mocked Tampermonkey APIs. The Windows handler test intercepts process launches and skips on other platforms. These checks do not replace testing with Tampermonkey on authenticated live sites. See [the audit findings](AUDIT.md) for fixes and remaining limits.
+ESLint's flat configuration checks all 12 userscripts for correctness and modern conventions. Playwright exercises browser behavior with deterministic site fixtures and mocked Tampermonkey APIs. The Windows handler test intercepts process launches and skips on other platforms. These checks do not replace testing with Tampermonkey on authenticated live sites. See [the audit findings](AUDIT.md) for fixes and remaining limits.
+
+The Du Chinese Yomitan tests include a pinned upstream Yomitan text scanner under `tests/fixtures/yomitan` (GPL-3.0-or-later, used only in tests). To run the optional anonymous live-lesson smoke test in PowerShell, use `$env:DUCHINESE_LIVE = '1'` followed by `npx playwright test tests/duchinese-yomitan-live.spec.js`; remove the override afterward with `Remove-Item Env:DUCHINESE_LIVE`. This checks the scanner and native reader interactions; it does not install Yomitan or verify an extension popup.
 
 ## Scripts
 
@@ -28,6 +30,11 @@ ESLint's flat configuration checks all 11 userscripts for correctness and modern
 
 - **Du Chinese & Yomu Yomu Audio Downloader**
   Runs on `https://duchinese.net/lessons/*` and `https://yomuyomu.app/lessons/*` pages and adds a download icon beside the fixed play control. Both sites share the same lesson player, so one script covers them. Downloads use the audio URL already supplied to the lesson player. Standalone lessons are named from the lesson title; course audio adds a sortable chapter suffix such as `Chapter 01`.
+
+- **Du Chinese — Yomitan Compatibility**
+  Makes the existing Du Chinese canvas reader scannable by Yomitan by mirroring its Chinese character draws into an invisible, selectable text layer. Preserves the reader's layout, pinyin, playback highlights, and native word interactions. Follows simplified/traditional selection, font changes, resizing, and lesson navigation. Runs across Du Chinese so entering a lesson without a full page load also works; only lesson text canvases are captured. Compatible with the audio downloader above.
+
+  Install `scripts/duchinese-yomitan.user.js`, then reload Du Chinese so the script can capture the initial drawing. Use your configured Yomitan scanning gesture with a Chinese dictionary enabled and site access granted. Requires Tampermonkey 5.3+ in a current desktop Chromium or Firefox browser; the script uses the raw page sandbox to observe canvas drawing. It sends no requests and loads no dependencies. It depends on Du Chinese's current canvas renderer and does not cover Yomu Yomu.
 
 - **Plex Open in mpv**
   Adds an `Open in mpv` button to local Plex detail pages and small `mpv` buttons on Home/library media cards at `127.0.0.1:32400` / `localhost:32400`, resolving the best original media parts and handing them to an installed `plex-mpv://` protocol handler.
