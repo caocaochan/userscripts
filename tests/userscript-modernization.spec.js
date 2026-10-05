@@ -44,6 +44,11 @@ const SCRIPT_CONFIG = {
     ],
     spa: true,
   },
+  "iqiyi-yomitan.user.js": {
+    grants: ["GM.addStyle"],
+    // Static CSS also covers captions replaced during SPA navigation.
+    spa: false,
+  },
   "jjwxc-reader-theme.user.js": {
     grants: [
       "GM.addStyle",

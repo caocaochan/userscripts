@@ -62,6 +62,21 @@
       ]
     },
     {
+      "id": "iqiyi-yomitan",
+      "name": "iQIYI — Yomitan Compatibility",
+      "description": "Makes native subtitle text on iQIYI.com selectable and scannable by Yomitan without changing playback.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/iqiyi-yomitan.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/iqiyi-yomitan.user.js",
+      "tags": [
+        "tampermonkey",
+        "iqiyi",
+        "iqiyi.com",
+        "subtitles",
+        "yomitan",
+        "chinese"
+      ]
+    },
+    {
       "id": "jjwxc-reader-theme",
       "name": "JJWXC Reader — LXGW WenKai + Solarized Light",
       "description": "Formats JJWXC chapter prose at 20px with LXGW WenKai Screen and themes desktop chapter pages with Solarized Light.",

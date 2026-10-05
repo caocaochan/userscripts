@@ -19,9 +19,9 @@ npm run lint
 npm test
 ```
 
-ESLint's flat configuration checks all 12 userscripts for correctness and modern conventions. Playwright exercises browser behavior with deterministic site fixtures and mocked Tampermonkey APIs. The Windows handler test intercepts process launches and skips on other platforms. These checks do not replace testing with Tampermonkey on authenticated live sites. See [the audit findings](AUDIT.md) for fixes and remaining limits.
+ESLint's flat configuration checks all 13 userscripts for correctness and modern conventions. Playwright exercises browser behavior with deterministic site fixtures and mocked Tampermonkey APIs. The Windows handler test intercepts process launches and skips on other platforms. These checks do not replace testing with Tampermonkey on authenticated live sites. See [the audit findings](AUDIT.md) for fixes and remaining limits.
 
-The Du Chinese Yomitan tests include a pinned upstream Yomitan text scanner under `tests/fixtures/yomitan` (GPL-3.0-or-later, used only in tests). To run the optional anonymous live-lesson smoke test in PowerShell, use `$env:DUCHINESE_LIVE = '1'` followed by `npx playwright test tests/duchinese-yomitan-live.spec.js`; remove the override afterward with `Remove-Item Env:DUCHINESE_LIVE`. This checks the scanner and native reader interactions; it does not install Yomitan or verify an extension popup.
+The Du Chinese and iQIYI Yomitan tests use a pinned upstream Yomitan text scanner under `tests/fixtures/yomitan` (GPL-3.0-or-later, used only in tests). To run the optional anonymous live-lesson smoke test in PowerShell, use `$env:DUCHINESE_LIVE = '1'` followed by `npx playwright test tests/duchinese-yomitan-live.spec.js`; remove the override afterward with `Remove-Item Env:DUCHINESE_LIVE`. For the iQIYI episode test, use `$env:IQIYI_LIVE = '1'` followed by `npx playwright test tests/iqiyi-yomitan-live.spec.js`, then `Remove-Item Env:IQIYI_LIVE`. The iQIYI test waits through preroll ads and checks normal/fullscreen captions and hover playback behavior. These tests do not install Tampermonkey or Yomitan, or verify an extension popup; they inject the userscript with a mocked style API and exercise the upstream scanner.
 
 ## Scripts
 
@@ -46,6 +46,11 @@ The Du Chinese Yomitan tests include a pinned upstream Yomitan text scanner unde
 
 - **iQIYI Subtitle Downloader**
   Adds a floating subtitles panel to `https://www.iq.com/play/*` and `https://www.iqiyi.com/v_*.html` episode pages and downloads available subtitle tracks as `.srt` files. It uses IQ.com’s embedded Next.js subtitle metadata and iQIYI.com’s runtime player subtitle metadata.
+
+- **iQIYI — Yomitan Compatibility**
+  Makes iQIYI.com's native HTML subtitle text selectable and scannable by Yomitan. A small stylesheet enables pointer hit testing and text selection only on caption text, preserving native appearance, timing, normal/fullscreen layout, and playback controls. It follows changing captions and episode navigation without observers, requests, or replacement overlays; playback does not pause on hover.
+
+  Install [`scripts/iqiyi-yomitan.user.js`](scripts/iqiyi-yomitan.user.js) in Tampermonkey 5.3+ and reload iQIYI. Grant Yomitan site access to `iqiyi.com` / `www.iqiyi.com`, enable a Chinese dictionary, and use your configured scanning gesture over a subtitle. Works independently of the subtitle downloader above. This version targets the Chinese website's current HTML caption renderer; it does not cover IQ.com, captions embedded in video pixels, or native video Picture-in-Picture windows.
 
 - **JJWXC Reader — LXGW WenKai + Solarized Light**
   Formats chapter prose at a fixed 20px with the locally installed `LXGW WenKai Screen` font on desktop `https://www.jjwxc.net/onebook.php*` pages and themes the surrounding reader, navigation, sidebars, controls, author notes, comments, and footer with Solarized Light. If the font is unavailable, the script falls back to JJWXC’s existing Chinese font stack. Logos, advertisements, cover art, QR codes, and indispensable image-based channel labels keep their original colors.
