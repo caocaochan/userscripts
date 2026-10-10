@@ -19,7 +19,7 @@ npm run lint
 npm test
 ```
 
-ESLint's flat configuration checks all 13 userscripts for correctness and modern conventions. Playwright exercises browser behavior with deterministic site fixtures and mocked Tampermonkey APIs. The Windows handler test intercepts process launches and skips on other platforms. These checks do not replace testing with Tampermonkey on authenticated live sites. See [the audit findings](AUDIT.md) for fixes and remaining limits.
+ESLint's flat configuration checks all 14 userscripts for correctness and modern conventions. Playwright exercises browser behavior with deterministic site fixtures and mocked Tampermonkey APIs. The Windows handler test intercepts process launches and skips on other platforms. These checks do not replace testing with Tampermonkey on authenticated live sites. See [the audit findings](AUDIT.md) for fixes and remaining limits.
 
 The Du Chinese and iQIYI Yomitan tests use a pinned upstream Yomitan text scanner under `tests/fixtures/yomitan` (GPL-3.0-or-later, used only in tests). To run the optional anonymous live-lesson smoke test in PowerShell, use `$env:DUCHINESE_LIVE = '1'` followed by `npx playwright test tests/duchinese-yomitan-live.spec.js`; remove the override afterward with `Remove-Item Env:DUCHINESE_LIVE`. For the iQIYI episode test, use `$env:IQIYI_LIVE = '1'` followed by `npx playwright test tests/iqiyi-yomitan-live.spec.js`, then `Remove-Item Env:IQIYI_LIVE`. The iQIYI test waits through preroll ads and checks normal/fullscreen captions and hover playback behavior. These tests do not install Tampermonkey or Yomitan, or verify an extension popup; they inject the userscript with a mocked style API and exercise the upstream scanner.
 
@@ -57,6 +57,11 @@ The Du Chinese and iQIYI Yomitan tests use a pinned upstream Yomitan text scanne
 
 - **Missevan Subtitle Styler**
   Adds a floating `Subs` settings panel to `https://www.missevan.com/sound/player*` pages and improves audio-drama subtitles with customizable font family, size, line height, vertical position, speaker colors, text color, background opacity, and shadow strength.
+
+- **Missevan — Yomitan Compatibility**
+  Makes Missevan's native subtitle text selectable and scannable by Yomitan. A small stylesheet enables pointer hit testing and text selection only on subtitle lines, preserving their appearance and the player's click behavior; danmaku are left unchanged. Follows changing subtitles and sound switches without observers or requests.
+
+  Install [`scripts/missevan-yomitan.user.js`](scripts/missevan-yomitan.user.js) in Tampermonkey 5.3+ and reload Missevan. Grant Yomitan site access to `www.missevan.com`, enable a Chinese dictionary, and use your configured scanning gesture over a subtitle. Compatible with the subtitle styler above.
 
 - **Nyaa Group Hider + Highlighter**
   Hides or highlights torrent rows on `https://nyaa.si/` when the release title starts with a configured group tag such as `[SubsPlease]`. Hidden and highlighted groups can be edited from the page controls or Tampermonkey's userscript menu without changing the script.

@@ -65,6 +65,11 @@ const SCRIPT_CONFIG = {
     ],
     spa: true,
   },
+  "missevan-yomitan.user.js": {
+    grants: ["GM.addStyle"],
+    // Static CSS also covers subtitles replaced when switching sounds.
+    spa: false,
+  },
   "nyaa-group-hider.user.js": {
     grants: [
       "GM.addStyle",
