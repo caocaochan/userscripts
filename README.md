@@ -59,7 +59,7 @@ The Du Chinese and iQIYI Yomitan tests use a pinned upstream Yomitan text scanne
   Adds a floating `Subs` settings panel to `https://www.missevan.com/sound/player*` pages and improves audio-drama subtitles with customizable font family, size, line height, vertical position, speaker colors, text color, background opacity, and shadow strength.
 
 - **Missevan — Yomitan Compatibility**
-  Makes Missevan's native subtitle text selectable and scannable by Yomitan. A small stylesheet enables pointer hit testing and text selection only on subtitle lines, preserving their appearance and the player's click behavior; danmaku are left unchanged. Follows changing subtitles and sound switches without observers or requests.
+  Makes Missevan drama subtitle lines selectable and scannable by Yomitan. Dramas post their subtitles as fixed top/bottom danmaku lines; a small stylesheet enables pointer hit testing and text selection only on those visible lines (and on the native subtitle layer when a sound uses it), preserving their appearance and the player's click behavior. Scrolling danmaku stay click-through. Follows changing lines and sound switches without observers or requests.
 
   Install [`scripts/missevan-yomitan.user.js`](scripts/missevan-yomitan.user.js) in Tampermonkey 5.3+ and reload Missevan. Grant Yomitan site access to `www.missevan.com`, enable a Chinese dictionary, and use your configured scanning gesture over a subtitle. Compatible with the subtitle styler above.
 
