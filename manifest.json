@@ -107,6 +107,21 @@
       ]
     },
     {
+      "id": "missevan-yomitan",
+      "name": "Missevan — Yomitan Compatibility",
+      "description": "Makes native Missevan subtitle text selectable and scannable by Yomitan.",
+      "installUrl": "https://raw.githubusercontent.com/caocaochan/userscripts/main/scripts/missevan-yomitan.user.js",
+      "sourceUrl": "https://github.com/caocaochan/userscripts/blob/main/scripts/missevan-yomitan.user.js",
+      "tags": [
+        "tampermonkey",
+        "missevan",
+        "maoer",
+        "subtitles",
+        "yomitan",
+        "chinese"
+      ]
+    },
+    {
       "id": "nyaa-group-hider",
       "name": "Nyaa Group Hider + Highlighter",
       "description": "Hides or highlights Nyaa torrent rows from configured release groups.",
